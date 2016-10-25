@@ -15,9 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="binary-trees-indices_u64q_checked.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
