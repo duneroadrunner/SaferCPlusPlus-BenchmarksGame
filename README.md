@@ -21,13 +21,13 @@ unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.08 | 1.15
 
-#### binary-trees (indices) (args: 20)
+#### binary-trees (indices)* (args: 20)
 
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.10 | 1.44
 
-#### fasta* (args: 5000000) (standard output piped to null)
+#### fasta** (args: 5000000) (standard output piped to null)
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.77 | 1.86
@@ -38,10 +38,10 @@ unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.17 | 1.37
 
-
 ##### platform: msvc2015/default optimizations/x64/Windows10/Haswell (Oct 2016):
 
+\* There is a marginally faster implementation of binary-trees using pointers instead of indices. That implementation could also be translated to SaferCPlusPlus, but would be slower.  
 
-\* The performance discrepencies in the "fasta" benchmark are largely not related to the performance of the SaferCPlusPlus elements, but rather the "safer" programming style SaferCPlusPlus encourages with respect to sharing objects between asynchoronous threads. In particular, the original "unchecked" implementation of the fasta benchmark engages in a lot of "direct" writes to global and static variables from multiple different asynchronous threads. As a general rule, SaferCPlusPlus considers this an unsafe practice. And so the "checked" and "strict" SaferCPlusPlus implementations instead replace those direct accesses with safer ones, not bothering to factor the overhead out of the inner loops.
+\** The performance discrepencies in the "fasta" benchmark are largely not related to the performance of the SaferCPlusPlus elements, but rather the "safer" programming style SaferCPlusPlus encourages with respect to sharing objects between asynchoronous threads. In particular, the original "unchecked" implementation of the fasta benchmark engages in a lot of direct writes to global and static variables from multiple different asynchronous threads. As a general rule, SaferCPlusPlus considers this an unsafe practice. And so the "checked" and "strict" SaferCPlusPlus implementations instead replace those direct accesses with safer ones, not bothering to factor the overhead out of the inner loops.
 
 
