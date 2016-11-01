@@ -51,7 +51,10 @@ const std::string alu =
 };
 
 /* "Strict SaferCPlusPlus" generally prefers the "lifespan aware" mse::mstd::array<> over mse::msearray<>,
-but "lifespan safety" (i.e. premature deallocation) is not an issue for objects declared at global scope. */
+but "lifespan safety" (i.e. premature deallocation) is not an issue for objects declared at global scope.
+Furthermore, these arrays will be shared (as read-only) among asynchronous threads. In general,
+mse::mstd::array<> should not be shared between asynchronous threads as its iterator tracking mechanism
+is not thread safe. */
 mse::msearray<IUB, 15> iub =
 { { {
 	{ 0.27f, 'a' },
@@ -90,6 +93,9 @@ template<class gen_random_state_pointer_type>
 uint32_t gen_random(gen_random_state_pointer_type state_ptr)
 {
 	static const int IA = 3877, IC = 29573;
+	/* The static int was being accessed and modified from multiple asynchronous threads, so we moved it into
+	a separate "state" structure so that we could use SaferCPlusPlus' automatic access controls to ensure safe
+	access (i.e. no race conditions).*/
 	//static int last = 42;
 	//last = (last * IA + IC) % IM;
 	state_ptr->m_int = (state_ptr->m_int * IA + IC) % IM;
@@ -119,6 +125,10 @@ public:
 		return *p;
 	}
 private:
+	/* In general, storing iterators to arrays shared between asynchronous threads is not really kosher
+	SaferCPlusPlus. Storing indices would be better. But for now we'll leave it as is in order to leave
+	the code more recognizable when comparing with the "unchecked" implementation. The change wouldn't
+	affect performance anyway (as the safe iterators are implemented with indices). */
 	iterator_type first;
 	iterator_type current;
 	iterator_type last;
@@ -208,6 +218,9 @@ mse::msear_size_t fillBlock(mse::msear_size_t currentThread, iterator_type begin
 	while (true)
 	{
 		//LOCK(g_fillMutex);
+		/* Usually each thread would hold their own copy of the "access requester", but if the original
+		access requester happens to be global, then each thread can just use the global one (without fear
+		that it might be deallocated before it's finished using it). */
 		auto fill_state_writelock_ptr = g_fill_state_access_requester.writelock_ptr();
 		if (currentThread == fill_state_writelock_ptr->m_fillThreadIndex/*g_fillThreadIndex*/)
 		{

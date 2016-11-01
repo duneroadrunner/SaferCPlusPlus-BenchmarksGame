@@ -80,6 +80,9 @@ struct gen_random_state_type {
 uint32_t gen_random(gen_random_state_type& state)
 {
 	static const int IA = 3877, IC = 29573;
+	/* The static int was being accessed and modified from multiple asynchronous threads, so we moved it into
+	a separate "state" structure so that we could use SaferCPlusPlus' automatic access controls to ensure safe
+	access (i.e. no race conditions).*/
 	//static int last = 42;
 	auto& last = state.m_int;
 	last = (last * IA + IC) % IM;
@@ -108,6 +111,10 @@ public:
 		return *p;
 	}
 private:
+	/* In general, storing iterators to arrays shared between asynchronous threads is not really kosher
+	SaferCPlusPlus. Storing indices would be better. But for now we'll leave it as is in order to leave 
+	the code more recognizable when comparing with the "unchecked" implementation. The change wouldn't
+	affect performance anyway (as the safe iterators are implemented with indices). */
 	iterator_type first;
 	iterator_type current;
 	iterator_type last;
@@ -196,6 +203,9 @@ mse::msear_size_t fillBlock(mse::msear_size_t currentThread, iterator_type begin
 	while (true)
 	{
 		//LOCK(g_fillMutex);
+		/* Usually each thread would hold their own copy of the "access requester", but if the original
+		access requester happens to be global, then each thread can just use the global one (without fear
+		that it might be deallocated before it's finished using it). */
 		auto fill_state_writelock_ptr = g_fill_state_access_requester.writelock_ptr();
 		if (currentThread == fill_state_writelock_ptr->m_fillThreadIndex/*g_fillThreadIndex*/)
 		{
