@@ -142,13 +142,13 @@ public:
 			double dz = 0;
 			double filler = 0;
 		};
+		//static R r[1000];
 		static mse::mstd::array<R, 1000> r;
 
-		struct ALIGNAS(16) CAlDouble {
-			double m_value = 0;
-		};
-		static mse::mstd::array<CAlDouble, 1000> mag;
-		//double ALIGNAS(16) mag[1000];
+		//static ALIGNAS(16) double mag[1000];
+		/* We use mse::msearray<> here because mse::msearray<> has extra members that interfere with
+		alignment specifiers. */
+		static ALIGNAS(16) mse::msearray<double, 1000> mag;
 
 		for (mse::msear_size_t i = 0, k = 0; i < bodies.size() - 1; ++i) {
 			//Body& iBody = bodies[i];
@@ -192,14 +192,14 @@ public:
 
 			//__m128d dmag = _mm_set1_pd(dt) / (dSquared)* distance;
 			__m128d dmag = _mm_mul_pd(_mm_div_pd(_mm_set1_pd(dt), (dSquared)), distance);
-			_mm_store_pd(&(mag[mse::as_a_size_t(i)].m_value), dmag);
+			_mm_store_pd(&(mag[mse::as_a_size_t(i)]), dmag);
 		}
 
 		for (mse::msear_size_t i = 0, k = 0; i < bodies.size() - 1; ++i) {
 			//Body& iBody = bodies[i];
 			const auto bodies_i_mass = bodies[i].mass;
 			for (mse::msear_size_t j = i + 1; j < bodies.size(); ++j, ++k) {
-				const auto mag_k = mag[k].m_value;
+				const auto mag_k = mag[k];
 				const auto bodies_j_mass_times_mag_k = bodies[j].mass * mag_k;
 				bodies[i].vx -= r[k].dx * bodies_j_mass_times_mag_k;
 				bodies[i].vy -= r[k].dy * bodies_j_mass_times_mag_k;
@@ -254,9 +254,11 @@ int main(int argc, char** argv) {
 	}
 
 	NBodySystem bodies;
-	std::cout << std::setprecision(9) << bodies.energy() << '\n';
+	std::cout.precision(9);
+	std::cout.setf(std::ios::fixed, std::ios::floatfield); // floatfield set to fixed
+	std::cout << bodies.energy() << '\n';
 	for (int i = 0; i < n; ++i)
 		bodies.advance(0.01);
-	std::cout << std::setprecision(9) << bodies.energy() << '\n';
+	std::cout << bodies.energy() << '\n';
 
 }

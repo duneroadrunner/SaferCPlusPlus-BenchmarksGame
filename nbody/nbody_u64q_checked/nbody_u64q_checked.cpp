@@ -123,7 +123,7 @@ public:
 		double px = 0.0;
 		double py = 0.0;
 		double pz = 0.0;
-		for (unsigned i = 0; i < bodies.size(); ++i) {
+		for (mse::msear_size_t i = 0; i < bodies.size(); ++i) {
 			px += bodies[i].vx * bodies[i].mass;
 			py += bodies[i].vy * bodies[i].mass;
 			pz += bodies[i].vz * bodies[i].mass;
@@ -132,7 +132,7 @@ public:
 	}
 
 	void advance(double dt) {
-		const unsigned N = (bodies.size() - 1)*bodies.size() / 2;
+		const mse::msear_size_t N = (bodies.size() - 1)*bodies.size() / 2;
 		struct ALIGNAS(16) R {
 			double dx = 0;
 			double dy = 0;
@@ -142,25 +142,20 @@ public:
 		//static R r[1000];
 		static mse::msearray<R, 1000> r;
 
-		struct ALIGNAS(16) CAlDouble {
-			double m_value = 0;
-		};
-		static mse::msearray<CAlDouble, 1000> mag;
-		//double ALIGNAS(16) mag[1000];
+		//static ALIGNAS(16) double mag[1000];
+		static ALIGNAS(16) mse::msearray<double, 1000> mag;
 
-		for (unsigned i = 0, k = 0; i < bodies.size() - 1; ++i) {
-			//Body& iBody = bodies[i];
-			for (unsigned j = i + 1; j < bodies.size(); ++j, ++k) {
-				r[k].dx = bodies[i].x - bodies[j].x;
-				r[k].dy = bodies[i].y - bodies[j].y;
-				r[k].dz = bodies[i].z - bodies[j].z;
+		for (mse::msear_size_t i = 0, k = 0; i < bodies.size() - 1; ++i) {
+			Body& iBody = bodies[i];
+			for (mse::msear_size_t j = i + 1; j < bodies.size(); ++j, ++k) {
+				r[k].dx = iBody.x - bodies[j].x;
+				r[k].dy = iBody.y - bodies[j].y;
+				r[k].dz = iBody.z - bodies[j].z;
 			}
 		}
 
-		__m128d dx = __m128d();
-		__m128d dy = __m128d();
-		__m128d dz = __m128d();
-		for (unsigned i = 0; i < N; i += 2) {
+		for (mse::msear_size_t i = 0; i < N; i += 2) {
+			__m128d dx, dy, dz;
 			dx = _mm_loadl_pd(dx, &r[i].dx);
 			dy = _mm_loadl_pd(dy, &r[i].dy);
 			dz = _mm_loadl_pd(dz, &r[i].dz);
@@ -176,7 +171,7 @@ public:
 
 			__m128d distance =
 				_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(dSquared)));
-			for (unsigned j = 0; j<2; ++j)
+			for (mse::msear_size_t j = 0; j<2; ++j)
 			{
 				/*
 				distance = distance * _mm_set1_pd(1.5) -
@@ -190,27 +185,23 @@ public:
 
 			//__m128d dmag = _mm_set1_pd(dt) / (dSquared)* distance;
 			__m128d dmag = _mm_mul_pd(_mm_div_pd(_mm_set1_pd(dt), (dSquared)), distance);
-			_mm_store_pd(&(mag[i].m_value), dmag);
+			_mm_store_pd(&(mag[i]), dmag);
 		}
 
-		for (unsigned i = 0, k = 0; i < bodies.size() - 1; ++i) {
-			//Body& iBody = bodies[i];
-			const auto bodies_i_mass = bodies[i].mass;
-			for (unsigned j = i + 1; j < bodies.size(); ++j, ++k) {
-				const auto mag_k = mag[k].m_value;
-				const auto bodies_j_mass_times_mag_k = bodies[j].mass * mag_k;
-				bodies[i].vx -= r[k].dx * bodies_j_mass_times_mag_k;
-				bodies[i].vy -= r[k].dy * bodies_j_mass_times_mag_k;
-				bodies[i].vz -= r[k].dz * bodies_j_mass_times_mag_k;
+		for (mse::msear_size_t i = 0, k = 0; i < bodies.size() - 1; ++i) {
+			Body& iBody = bodies[i];
+			for (mse::msear_size_t j = i + 1; j < bodies.size(); ++j, ++k) {
+				iBody.vx -= r[k].dx * bodies[j].mass * mag[k];
+				iBody.vy -= r[k].dy * bodies[j].mass * mag[k];
+				iBody.vz -= r[k].dz * bodies[j].mass * mag[k];
 
-				const auto bodies_i_mass_times_mag_k = bodies_i_mass * mag_k;
-				bodies[j].vx += r[k].dx * bodies_i_mass_times_mag_k;
-				bodies[j].vy += r[k].dy * bodies_i_mass_times_mag_k;
-				bodies[j].vz += r[k].dz * bodies_i_mass_times_mag_k;
+				bodies[j].vx += r[k].dx * iBody.mass * mag[k];
+				bodies[j].vy += r[k].dy * iBody.mass * mag[k];
+				bodies[j].vz += r[k].dz * iBody.mass * mag[k];
 			}
 		}
 
-		for (unsigned i = 0; i < bodies.size(); ++i) {
+		for (mse::msear_size_t i = 0; i < bodies.size(); ++i) {
 			bodies[i].x += dt * bodies[i].vx;
 			bodies[i].y += dt * bodies[i].vy;
 			bodies[i].z += dt * bodies[i].vz;
@@ -224,14 +215,14 @@ public:
 		double dy = 0;
 		double dz = 0;
 		double distance = 0;
-		for (unsigned i = 0; i < bodies.size(); ++i) {
+		for (mse::msear_size_t i = 0; i < bodies.size(); ++i) {
 			//Body const & iBody = bodies[i];
 			e += 0.5 * bodies[i].mass *
 				(bodies[i].vx * bodies[i].vx
 					+ bodies[i].vy * bodies[i].vy
 					+ bodies[i].vz * bodies[i].vz);
 
-			for (unsigned j = i + 1; j < bodies.size(); ++j) {
+			for (mse::msear_size_t j = i + 1; j < bodies.size(); ++j) {
 				//Body const & jBody = bodies[j];
 				dx = bodies[i].x - bodies[j].x;
 				dy = bodies[i].y - bodies[j].y;
@@ -252,9 +243,11 @@ int main(int argc, char** argv) {
 	}
 
 	NBodySystem bodies;
-	std::cout << std::setprecision(9) << bodies.energy() << '\n';
+	std::cout.precision(9);
+	std::cout.setf(std::ios::fixed, std::ios::floatfield); // floatfield set to fixed
+	std::cout << bodies.energy() << '\n';
 	for (int i = 0; i < n; ++i)
 		bodies.advance(0.01);
-	std::cout << std::setprecision(9) << bodies.energy() << '\n';
+	std::cout << bodies.energy() << '\n';
 
 }
