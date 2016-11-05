@@ -240,3 +240,7 @@ ModelManifest.xml
 
 # FAKE - F# Make
 .fake/
+/mandelbrot/mandelbrot_u64q_unchecked/mandelbrot-output_20000.pbm
+/mandelbrot/mandelbrot_u64q_unchecked/mandelbrot-output_10000.pbm
+/mandelbrot/mandelbrot_u64q_strict/mandelbrot-output_10000.pbm
+/mandelbrot/mandelbrot_u64q_checked/mandelbrot-output_10000.pbm
