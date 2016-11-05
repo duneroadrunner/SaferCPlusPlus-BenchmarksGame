@@ -82,7 +82,7 @@ typedef quickndirty_index_span_type<double, al_double_array_buffer_pointer_type,
 typedef sn_span_type sn_array_accessor_type;
 
 template <bool modei> int Index(mse::msear_size_t i, mse::msear_size_t j) {
-	return (((i + j) * (i + j + 1)) >> 1) + (modei ? i : j) + 1;
+	return int(((i + j) * (i + j + 1)) >> 1) + int(mse::as_a_size_t(modei ? i : j)) + 1;
 }
 
 template <bool modei>
@@ -170,7 +170,7 @@ int GetThreadCount() {
 	sched_getaffinity(0, sizeof(cs), &cs);
 
 	int count = 0;
-	for (mse::msear_size_t i = 0; i < CPU_SETSIZE; ++i)
+	for (int i = 0; i < CPU_SETSIZE; ++i)
 		if (CPU_ISSET(i, &cs))
 			++count;
 
