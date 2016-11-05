@@ -43,12 +43,12 @@
 #define MAX_N 10000
 /* We use mse::msearray<> here as mse::mst::array<> is not appropriate for either sharing between
 asynchronous threads or alignment specifiers. */
-typedef ALIGNAS(16) mse::msearray<double, MAX_N> al_double_array_buffer_type;
+typedef mse::msearray<double, MAX_N> double_array_buffer_type;
 /* The reason we are using a native pointer type here instead of a safer substitute is that pointers
 of this type are to be accessed from asynchronous threads. The rule of thumb is to prefer the simplest
 possible data types when sharing objects between asynchronous threads, even when that means foregoing
 the use of some of the elements in the SaferCPlusPlus library. */
-typedef al_double_array_buffer_type* al_double_array_buffer_pointer_type;
+typedef double_array_buffer_type* al_double_array_buffer_pointer_type;
 
 /* The original implementation partitioned the arrays of doubles into chunks, each assigned to a thread.
 Even though each chunk is only accessed by a single thread for writing, each chunk is accessed by all
@@ -192,9 +192,9 @@ double spectral_game(mse::msear_size_t N) {
 	thumb is, if you have to share data between asynchronous threads, prefer the simplest possible packaging
 	of that data (or one specifically designed for asynchronous sharing), even when that means foregoing the
 	use of some of the elements in the SaferCPlusPlus library. */
-	al_double_array_buffer_type u_buffer;
-	al_double_array_buffer_type v_buffer;
-	al_double_array_buffer_type tmp_buffer;
+	ALIGNAS(16) double_array_buffer_type u_buffer;
+	ALIGNAS(16) double_array_buffer_type v_buffer;
+	ALIGNAS(16) double_array_buffer_type tmp_buffer;
 
 	sn_array_accessor_type u(&u_buffer, 0, N);
 	sn_array_accessor_type v(&v_buffer, 0, N);

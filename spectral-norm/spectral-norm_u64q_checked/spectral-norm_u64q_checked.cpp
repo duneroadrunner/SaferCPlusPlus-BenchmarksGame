@@ -42,7 +42,7 @@ threads. Data race prevention doesn't seem to be a priority of OMP. Excluding th
 safety, there are actually relatively few code changes from the original.  */
 
 #define MAX_N 10000
-typedef ALIGNAS(16) mse::msearray<double, MAX_N> al_double_array_buffer_type;
+typedef mse::msearray<double, MAX_N> double_array_buffer_type;
 
 /* The original implementation partitioned the arrays of doubles into chunks, each assigned to a thread.
 Even though each chunk is only accessed by a single thread for writing, each chunk is accessed by all
@@ -72,7 +72,7 @@ public:
 	_TArray& m_array_ref;
 };
 
-typedef quickndirty_index_span_type<double, al_double_array_buffer_type, MAX_N> sn_span_type;
+typedef quickndirty_index_span_type<double, double_array_buffer_type, MAX_N> sn_span_type;
 typedef sn_span_type sn_array_accessor_type;
 
 template <bool modei> int Index(mse::msear_size_t i, mse::msear_size_t j) {
@@ -181,9 +181,9 @@ struct double_container_type {
 double spectral_game(mse::msear_size_t N) {
 	//ALIGNAS(16) double u[N];
 	//ALIGNAS(16) double v[N], tmp[N];
-	al_double_array_buffer_type u_buffer;
-	al_double_array_buffer_type v_buffer;
-	al_double_array_buffer_type tmp_buffer;
+	ALIGNAS(16) double_array_buffer_type u_buffer;
+	ALIGNAS(16) double_array_buffer_type v_buffer;
+	ALIGNAS(16) double_array_buffer_type tmp_buffer;
 
 	sn_array_accessor_type u(u_buffer, 0, N);
 	sn_array_accessor_type v(v_buffer, 0, N);
