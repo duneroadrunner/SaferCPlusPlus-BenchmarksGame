@@ -9,34 +9,40 @@ This repository contains benchmarks originally from ["The Computer Language Benc
 - "Checked" implementations accomodate the use of mse::msearray<> and mse::msevector<> in lieu of their slightly safer counterparts, mse::mstd::array<> and mse::mstd::vector<>.
 - "Strict" implementations generally define the MSE_MSEARRAY_USE_MSE_PRIMITIVES and MSE_MSEVECTOR_USE_MSE_PRIMITIVES preprocessor directives which cause the arrays and vectors to use mse::CInt and mse::CSize_t in their implementation and interfaces in lieu of their "less safe" native counterparts.
 
-Note that these are fairly direct translations of the original C++ implementation. This often results in a lot of redundant bounds checking. In many cases the code could be redesigned to significantly reduce the redundancy.  
+Note that these are fairly direct translations of the original C++ implementation. This often results in a lot of redundant bounds checking. In many cases the code could be reworked to significantly reduce the redundancy.  
 
 The provided code has been tested to work with msvc2015 and g++5.3 (as of Oct 2016).  
 
 Sample results (normalized elapsed time):
 
-#### n-body (args: 50000000)
+#### n-body (args: "50000000")
 
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.08 | 1.15
 
-#### binary-trees (indices)* (args: 20)
+#### binary-trees (indices)* (args: "20")
 
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.10 | 1.44
 
-#### fasta** (args: 5000000) (standard output piped to null)
+#### fasta** (args: "5000000") (standard output piped to null)
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.77 | 1.86
 
-#### mandelbrot (args: 10000 out.pbm)
+#### mandelbrot (args: "10000 out.pbm")
 
 unchecked | checked | strict
 --------- | ------- | ------
 1.00 | 1.17 | 1.37
+
+#### spectral-norm (args: "5500")
+
+unchecked | checked | strict
+--------- | ------- | ------
+1.00 | 1.00 | 1.00
 
 ##### platform: msvc2015/default optimizations/x64/Windows10/Haswell (Oct 2016):
 
