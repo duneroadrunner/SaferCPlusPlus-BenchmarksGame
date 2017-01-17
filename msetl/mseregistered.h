@@ -690,7 +690,7 @@ namespace mse {
 		_TLeasePointerType lease_pointer() const { return (*this).m_lease_pointer; }
 
 		template <class _TTargetType2, class _TLeasePointerType2>
-		static TSyncWeakFixedPointer make_syncweak(_TTargetType2& target, const _TLeasePointerType2& lease_pointer) {
+		static TSyncWeakFixedPointer make(_TTargetType2& target, const _TLeasePointerType2& lease_pointer) {
 			return TSyncWeakFixedPointer(target, lease_pointer);
 		}
 
@@ -706,7 +706,7 @@ namespace mse {
 
 	template <class _TTargetType, class _TLeasePointerType>
 	TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType> make_syncweak(_TTargetType& target, const _TLeasePointerType& lease_pointer) {
-		return TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::make_syncweak(target, lease_pointer);
+		return TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::make(target, lease_pointer);
 	}
 
 	template <class _TTargetType, class _TLeasePointerType>
@@ -743,6 +743,11 @@ namespace mse {
 		}
 		_TLeasePointerType lease_pointer() const { return (*this).m_lease_pointer; }
 
+		template <class _TTargetType2, class _TLeasePointerType2>
+		static TSyncWeakFixedConstPointer make(const _TTargetType2& target, const _TLeasePointerType2& lease_pointer) {
+			return TSyncWeakFixedConstPointer(target, lease_pointer);
+		}
+
 	private:
 		TSyncWeakFixedConstPointer(const _TTargetType& target/* often a struct member */, _TLeasePointerType lease_pointer/* usually a registered pointer */)
 			: m_target_pointer(&target), m_lease_pointer(lease_pointer) {}
@@ -756,6 +761,19 @@ namespace mse {
 	bool TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::operator==(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const { return (_Right_cref == m_target_pointer); }
 	template <class _TTargetType, class _TLeasePointerType>
 	bool TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::operator!=(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const { return (!((*this) == _Right_cref)); }
+
+	template<class _TTargetType, class _Ty>
+	TSyncWeakFixedPointer<_TTargetType, _Ty> make_pointer_to_member(_TTargetType& target, const _Ty &lease_pointer) {
+		return TSyncWeakFixedPointer<_TTargetType, _Ty>::make(target, lease_pointer);
+	}
+	template<class _TTargetType, class _Ty>
+	TSyncWeakFixedConstPointer<_TTargetType, _Ty> make_pointer_to_member(const _TTargetType& target, const _Ty &lease_pointer) {
+		return TSyncWeakFixedConstPointer<_TTargetType, _Ty>::make(target, lease_pointer);
+	}
+	template<class _TTargetType, class _Ty>
+	TSyncWeakFixedConstPointer<_TTargetType, _Ty> make_const_pointer_to_member(const _TTargetType& target, const _Ty &lease_pointer) {
+		return TSyncWeakFixedConstPointer<_TTargetType, _Ty>::make(target, lease_pointer);
+	}
 
 #ifdef MSE_REGISTEREDPOINTER_DISABLED
 #else /*MSE_REGISTEREDPOINTER_DISABLED*/
@@ -992,6 +1010,43 @@ namespace mse {
 			mse::TRegisteredFixedConstPointer<A> A_registered_fcptr1 = &registered_da;
 		}
 
+		{
+			/* Obtaining safe pointers to members of registered objects: */
+			class E {
+			public:
+				virtual ~E() {}
+				mse::TRegisteredObj<std::string> reg_s = "some text ";
+				std::string s2 = "some other text ";
+			};
+
+			mse::TRegisteredObj<E> registered_e;
+			mse::TRegisteredPointer<E> E_registered_ptr1 = &registered_e;
+
+			/* To obtain a safe pointer to a member of a registered object you could just make the
+			member itself a registered object. */
+			mse::TRegisteredPointer<std::string> reg_s_registered_ptr1 = &(E_registered_ptr1->reg_s);
+
+			/* Or you can use the "mse::make_pointer_to_member()" function. */
+			auto s2_safe_ptr1 = mse::make_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
+			(*s2_safe_ptr1) = "some new text";
+			auto s2_safe_const_ptr1 = mse::make_const_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
+
+			/* Just testing the convertibility of mse::TSyncWeakFixedPointers. */
+			auto E_registered_fixed_ptr1 = &registered_e;
+			auto swfptr1 = mse::make_syncweak<std::string>(E_registered_fixed_ptr1->s2, E_registered_fixed_ptr1);
+			mse::TSyncWeakFixedPointer<std::string, mse::TRegisteredPointer<E>> swfptr2 = swfptr1;
+			mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredFixedPointer<E>> swfcptr1 = swfptr1;
+			mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredPointer<E>> swfcptr2 = swfcptr1;
+			if (swfcptr1 == swfptr1) {
+				int q = 7;
+			}
+			if (swfptr1 == swfcptr1) {
+				int q = 7;
+			}
+			if (swfptr1) {
+				int q = 7;
+			}
+		}
 #endif // MSE_SELF_TESTS
 	}
 }
