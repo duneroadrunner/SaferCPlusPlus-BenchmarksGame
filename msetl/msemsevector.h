@@ -19,9 +19,9 @@
 #else /*_MSC_VER*/
 #if (defined(__GNUC__) || defined(__GNUG__))
 #define GPP_COMPATIBLE 1
-#if (5 > __GNUC__)
+#if ((5 > __GNUC__) && (!defined(__clang__)))
 #define GPP4P8_COMPATIBLE 1
-#endif /*(5 > __GNUC__)*/
+#endif /*((5 > __GNUC__) && (!defined(__clang__)))*/
 #endif
 #endif /*_MSC_VER*/
 
@@ -1168,8 +1168,8 @@ namespace mse {
 			msev_size_t position() const {
 				return m_index;
 			}
-			operator mm_iterator_type() const {
-				mm_iterator_type retval(*m_owner_ptr);
+			operator mm_const_iterator_type() const {
+				mm_const_iterator_type retval(*m_owner_ptr);
 				retval.set_to_beginning();
 				retval.advance(msev_int(m_index));
 				return retval;
@@ -2210,7 +2210,7 @@ namespace mse {
 			}
 			operator ss_const_iterator_type() const {
 				ss_const_iterator_type retval;
-				if (m_owner_ptr == nullptr) {
+				if (nullptr != m_owner_ptr) {
 					retval = m_owner_ptr->ss_cbegin();
 					retval.advance(msev_int(m_index));
 				}

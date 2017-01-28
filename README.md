@@ -46,6 +46,15 @@ unchecked | checked | strict
 
 ##### platform: msvc2015/default optimizations/x64/Windows10/Haswell (Oct 2016):
 
+#### (geometric) mean result
+
+unchecked | checked | strict
+--------- | ------- | ------
+1.00 | 1.20 | 1.33
+
+That is, on average, "checked" SaferCPlusPlus implementations were 20% slower and "strict" SaferCPlusPlus implementations were 33% slower than the original (unsafe) implementations.
+
+<br>
 \* There is a marginally faster implementation of binary-trees using pointers instead of indices. That implementation could also be translated to SaferCPlusPlus, but would be slower.  
 
 \** The performance discrepencies in the "fasta" benchmark are largely not related to the performance of the SaferCPlusPlus elements, but rather the "safer" programming style SaferCPlusPlus encourages with respect to sharing objects between asynchronous threads. In particular, the original "unchecked" implementation of the fasta benchmark engages in a lot of direct writes to global and static variables from multiple different asynchronous threads. As a general rule, SaferCPlusPlus considers this an unsafe practice. And so the "checked" and "strict" SaferCPlusPlus implementations instead replace those direct accesses with safer ones, not bothering to factor the overhead out of the inner loops.
