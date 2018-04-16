@@ -15,37 +15,22 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="mseasyncshared.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mseivector.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="msemsearray.h">
+    <ClInclude Include="mseprimitives.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="msemsevector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="msemstdarray.h">
+    <ClInclude Include="msetl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msevector_test.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="msemstdvector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="msepoly.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mseprimitives.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mserefcounting.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mserefcountingofregistered.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mserefcountingofrelaxedregistered.h">
+    <ClInclude Include="mseivector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="mseregistered.h">
@@ -54,19 +39,68 @@
     <ClInclude Include="mserelaxedregistered.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mserefcountingofrelaxedregistered.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mserefcountingofregistered.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mserefcounting.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="msescope.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="msevector_test.h">
+    <ClInclude Include="mseasyncshared.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msepoly.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msemsearray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msemstdarray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mseany.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mseoptional.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msepointerbasics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mselegacyhelpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msemsestring.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msemstdstring.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msetl_example2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="mserelaxedregistered.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="msetl_example.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="mserelaxedregistered.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="msetl_example2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="msetl_blurb.pdf" />
+    <None Include="msetl_blurb.odt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="LICENSE_1_0.txt" />
   </ItemGroup>
 </Project>

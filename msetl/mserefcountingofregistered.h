@@ -14,10 +14,15 @@
 #include <iostream>
 #include <utility>
 
-
 /* for the test functions */
 #include <map>
 #include <string>
+
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4100 4456 4189 )
+#endif /*_MSC_VER*/
+
 
 #ifdef MSE_SAFER_SUBSTITUTES_DISABLED
 #define MSE_REFCOUNTINGOFREGISTEREDPOINTER_DISABLED
@@ -43,6 +48,18 @@ namespace mse {
 	}
 
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
 	class TRefCountingOfRegisteredPointer_test {
 	public:
 		// sensed events
@@ -63,7 +80,7 @@ namespace mse {
 
 
 #define MTXASSERT_EQ(a, b, c) a &= (b==c)
-#define MTXASSERT(a, b) a &= (bool)(b)
+#define MTXASSERT(a, b) a &= static_cast<bool>(b)
 		bool testBehaviour()
 		{
 			bool ok = true;
@@ -171,9 +188,9 @@ namespace mse {
 			public:
 				A() {}
 				A(const A& _X) : b(_X.b) {}
-				A(A&& _X) : b(std::move(_X.b)) {}
+				A(A&& _X) : b(std::forward<decltype(_X.b)>(_X.b)) {}
 				virtual ~A() {}
-				A& operator=(A&& _X) { b = std::move(_X.b); return (*this); }
+				A& operator=(A&& _X) { b = std::forward<decltype(_X.b)>(_X.b); return (*this); }
 				A& operator=(const A& _X) { b = _X.b; return (*this); }
 
 				int b = 3;
@@ -213,7 +230,7 @@ namespace mse {
 #endif // !MSE_REFCOUNTINGPOINTER_DISABLED
 
 				auto registeredfixedpointer1 = (&(*A_refcountingofregistered_ptr1));
-				B::foo1((A*)registeredfixedpointer1);
+				B::foo1(static_cast<A*>(registeredfixedpointer1));
 
 				if (A_refcountingofregistered_ptr2) {
 				}
@@ -234,8 +251,20 @@ namespace mse {
 			int i = A_refcountingofregistered_ptr1->b;
 #endif // MSE_SELF_TESTS
 		}
-
 	};
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
 }
+
+#ifdef _MSC_VER
+#pragma warning( pop )  
+#endif /*_MSC_VER*/
 
 #endif // MSEREFCOUNTINGOFREGISTERED_H_

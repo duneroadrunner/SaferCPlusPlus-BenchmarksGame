@@ -7,8 +7,7 @@
 // Add SSE by The Anh Tran
 // Additional SSE optimization by Krzysztof Jakubowski
 
-// g++ -pipe -O3 -march=native -fopenmp -mfpmath=sse -msse2 \
-//     ./spec.c++ -o ./spec.run
+// g++ -pipe -O3 -march=native -fopenmp -mfpmath=sse -msse2 ./spec.c++ -o ./spec.run
 
 #ifdef _MSC_VER
 #include "windows.h"
@@ -38,124 +37,140 @@
 #include "mseasyncshared.h"
 #include "mseprimitives.h"
 #include "msescope.h"
-#include "mseregistered.h"
+#include "msemstdvector.h"
 
 #define MAX_N 10000
-/* We use mse::msearray<> here as mse::mst::array<> is not appropriate for either sharing between
-asynchronous threads or alignment specifiers. */
-typedef mse::msearray<double, MAX_N> double_array_buffer_type;
-/* The reason we are using a native pointer type here instead of a safer substitute is that pointers
-of this type are to be accessed from asynchronous threads. The rule of thumb is to prefer the simplest
-possible data types when sharing objects between asynchronous threads, even when that means foregoing
-the use of some of the elements in the SaferCPlusPlus library. */
-typedef double_array_buffer_type* al_double_array_buffer_pointer_type;
-
-/* The original implementation partitioned the arrays of doubles into chunks, each assigned to a thread.
-Even though each chunk is only accessed by a single thread for writing, each chunk is accessed by all
-threads for reading. Especially since these reads and writes are interleaved, prudent programming practices
-would have us protect these chunks with automatic access controls. To make this cleaner we define an "array
-span" data type that provides access to a specified chunk of an array. */
-template <class _TElement, class _TArrayPtr, int _Size>
-class quickndirty_index_span_type {
-public:
-	quickndirty_index_span_type(_TArrayPtr array_ptr, mse::msear_size_t start_index, mse::msear_size_t size) : m_array_ptr(array_ptr), m_start_index(start_index), m_size(size) {
-		if (_Size < (start_index + size)) { std::terminate(); }
-	}
-	quickndirty_index_span_type(quickndirty_index_span_type& src_span, mse::msear_size_t start_index, mse::msear_size_t size) : m_array_ptr(src_span.m_array_ptr), m_start_index(start_index), m_size(size) {
-		if (src_span.size() < (start_index + size)) { std::terminate(); }
-	}
-	_TElement& operator[](mse::msear_size_t index) {
-		if (m_size <= index) { std::terminate(); }
-		return (*m_array_ptr)[m_start_index + index];
-	}
-	const _TElement& operator[](mse::msear_size_t index) const {
-		if (m_size <= index) { std::terminate(); }
-		return (*m_array_ptr)[m_start_index + index];
-	}
-	mse::msear_size_t size() const { return m_size; }
-	const mse::msear_size_t m_start_index = 0;
-	const mse::msear_size_t m_size = 0;
-	_TArrayPtr m_array_ptr;
-};
-
-typedef quickndirty_index_span_type<double, al_double_array_buffer_pointer_type, MAX_N> sn_span_type;
-typedef sn_span_type sn_array_accessor_type;
+typedef mse::nii_array<double, MAX_N> double_array_buffer2_type;
 
 template <bool modei> int Index(mse::msear_size_t i, mse::msear_size_t j) {
 	return int(((i + j) * (i + j + 1)) >> 1) + int(mse::as_a_size_t(modei ? i : j)) + 1;
 }
 
-template <bool modei>
-void EvalPart(const sn_array_accessor_type src, sn_span_type dst) {
+template <bool modei, class TSrcArrayConstSection, class TDstArraySection>
+void EvalPart_V2(TSrcArrayConstSection src_section, TDstArraySection dst_section, mse::msear_size_t dst_section_absolute_start_index) {
 	mse::msear_size_t index = 0U;
-	/* Even though we're only writing to the "dst" span, the "i" variable needs to be relative to the start
+	/* Even though we're only writing to the "dst_section" span, the "i" variable needs to be relative to the start
 	of the whole array, not the span. */
-	mse::msear_size_t i = dst.m_start_index;
+	mse::msear_size_t i = dst_section_absolute_start_index;
 
-	for (; index + 1U < dst.size(); index += 2U, i += 2U) {
+	for (; index + 1U < dst_section.size(); index += 2U, i += 2U) {
 		__m128d sum = _mm_set_pd(
-			src[0] / double(Index<modei>(i + 1, 0)),
-			src[0] / double(Index<modei>(i + 0, 0)));
+			src_section[0] / double(Index<modei>(i + 1, 0)),
+			src_section[0] / double(Index<modei>(i + 0, 0)));
 
 		__m128d ti = modei ?
-			_mm_set_pd(i + 1, i + 0) :
-			_mm_set_pd(i + 2, i + 1);
+			_mm_set_pd(double(i + 1), double(i + 0)) :
+			_mm_set_pd(double(i + 2), double(i + 1));
 		__m128d last = _mm_set_pd(
 			Index<modei>(i + 1, 0),
 			Index<modei>(i + 0, 0));
 
-		for (mse::msear_size_t j = 1; j < src.size(); j++) {
+		for (mse::msear_size_t j = 1; j < src_section.size(); j++) {
 			//__m128d idx = last + ti + _mm_set1_pd(j);
-			__m128d idx = _mm_add_pd(last, _mm_add_pd(ti, _mm_set1_pd(mse::as_a_size_t(j))));
+			__m128d idx = _mm_add_pd(last, _mm_add_pd(ti, _mm_set1_pd(double(mse::msear_as_a_size_t(j)))));
 			last = idx;
-			//sum = sum + _mm_set1_pd(src[j]) / idx;
-			sum = _mm_add_pd(sum, _mm_div_pd(_mm_set1_pd(src[j]), idx));
+			//sum = sum + _mm_set1_pd(src_section[j]) / idx;
+			sum = _mm_add_pd(sum, _mm_div_pd(_mm_set1_pd(src_section[j]), idx));
 		}
 
-		_mm_storeu_pd(&(dst[index + 0]), sum);
+		_mm_storeu_pd(&(dst_section[index + 0]), sum);
 	}
-	for (; index < dst.size(); ++index, ++i) {
+	for (; index < dst_section.size(); ++index, ++i) {
 		double sum = 0;
-		for (mse::msear_size_t j = 0; j < src.size(); j++)
-			sum += src[j] / double(Index<modei>(i, j));
-		dst[index] = sum;
+		for (mse::msear_size_t j = 0; j < src_section.size(); j++)
+			sum += src_section[j] / double(Index<modei>(i, j));
+		dst_section[index] = sum;
 	}
-
 }
 
-void EvalATimesU(const sn_array_accessor_type src, sn_span_type dst) {
-	EvalPart<1>(src, dst);
+template<class TSrcArrayConstSection, class TDstArraySection>
+void EvalATimesU_V2(TSrcArrayConstSection src, TDstArraySection dst, mse::msear_size_t dst_absolute_start_index) {
+	EvalPart_V2<1>(src, dst, dst_absolute_start_index);
+}
+template<class TSrcArrayConstSection, class TDstArraySection>
+void EvalAtTimesU_V2(TSrcArrayConstSection src, TDstArraySection dst, mse::msear_size_t dst_absolute_start_index) {
+	EvalPart_V2<0>(src, dst, dst_absolute_start_index);
 }
 
-void EvalAtTimesU(const sn_array_accessor_type src, sn_span_type dst) {
-	EvalPart<0>(src, dst);
+template<class TSrcAccessRequester, class TDstAccessRequester>
+void EvalATimesU_V2_ar(TSrcAccessRequester src_ar, mse::msear_size_t src_size, TDstAccessRequester dst_ar, mse::msear_size_t dst_absolute_start_index) {
+	/* While src_ar.readlock_ptr() gives us (data race and bounds enforced) safe access to section of the array
+	buffer we need, we can slightly improve performance by explicitly guaranteeing that the array buffer (and our
+	safe access to a section of it) will not be deleted before the end of the scope. */
+	auto xscope_src_store = mse::make_xscope_strong_pointer_store(src_ar.readlock_ptr());
+	auto src_xscpcptr = xscope_src_store.xscope_ptr();
+	auto src_begin_xscpciter = mse::make_xscope_const_iterator(src_xscpcptr);
+	auto xscope_src_csection = mse::make_xscope_random_access_const_section(src_begin_xscpciter, src_size);
+	/* So xscope_src_csection is just a slightly faster version of the array section interface that src_ar.readlock_ptr()
+	gives us. */
+
+	EvalPart_V2<1>(xscope_src_csection, dst_ar.writelock_ra_section(), dst_absolute_start_index);
+}
+template<class TSrcAccessRequester, class TDstAccessRequester>
+void EvalAtTimesU_V2_ar(TSrcAccessRequester src_ar, mse::msear_size_t src_size, TDstAccessRequester dst_ar, mse::msear_size_t dst_absolute_start_index) {
+	auto xscope_src_store = mse::make_xscope_strong_pointer_store(src_ar.readlock_ptr());
+	auto src_xscpcptr = xscope_src_store.xscope_ptr();
+	auto src_begin_xscpciter = mse::make_xscope_const_iterator(src_xscpcptr);
+	auto xscope_src_csection = mse::make_xscope_random_access_const_section(src_begin_xscpciter, src_size);
+
+	EvalPart_V2<0>(xscope_src_csection, dst_ar.writelock_ra_section(), dst_absolute_start_index);
 }
 
-typedef std::vector<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWriteConstPointer<sn_span_type>> readlock_ptrs_type;
-template <typename _T1ptr>
-readlock_ptrs_type obtain_readlocks_on_all_subspans(_T1ptr access_requesters_ptr) {
-	readlock_ptrs_type retval;
-	for (auto& access_requester : (*access_requesters_ptr)) {
-		retval.emplace_back(access_requester.readlock_ptr());
+template<class TBufferAccessRequester, class TSectionSizeList>
+void EvalAtTimesU_V2(TBufferAccessRequester src_ar, TBufferAccessRequester dst_ar, TBufferAccessRequester tmp_ar
+	, TSectionSizeList section_sizes, mse::msear_size_t N, mse::msear_size_t max_chunk_size, mse::msear_size_t num_threads) {
+	{
+		/* TXScopeAsyncRASectionSplitter<> will generate a new access requester for each section. */
+		mse::TXScopeAsyncRASectionSplitter<decltype(tmp_ar)> ra_section_split1(tmp_ar, section_sizes);
+
+		auto& EvalATimesU_V2_ar_ref = EvalATimesU_V2_ar<decltype(src_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
+
+		mse::xscope_thread_carrier xscope_threads;
+		for (size_t i = 0; i < num_threads; i += 1) {
+			auto ar = ra_section_split1.ra_section_access_requester(i);
+			xscope_threads.new_thread(EvalATimesU_V2_ar_ref, src_ar, N, ar, i*max_chunk_size);
+		}
+		/* xscope_thread_carrier ensures that the scope will not end until all the threads have terminated. */
 	}
+	{
+		mse::TXScopeAsyncRASectionSplitter<decltype(dst_ar)> ra_section_split1(dst_ar, section_sizes);
+		auto& EvalAtTimesU_V2_ar_ref = EvalAtTimesU_V2_ar<decltype(tmp_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
+
+		mse::xscope_thread_carrier xscope_threads;
+		for (size_t i = 0; i < num_threads; i += 1) {
+			auto ar = ra_section_split1.ra_section_access_requester(i);
+			xscope_threads.new_thread(EvalAtTimesU_V2_ar_ref, tmp_ar, N, ar, i*max_chunk_size);
+		}
+	}
+}
+
+struct sums1_return_type {
+	double sumvb = 0.0;
+	double sumvv = 0.0;
+};
+/* Here "shareable" just means that the type is appropriate for sharing between threads (i.e. basically doesn't contain
+any pointers or references). */
+typedef mse::us::TUserDeclaredAsyncShareableObj<sums1_return_type> shareable_sums1_return_type;
+
+template<class TBufferAccessRequester, class TSectionSizeList>
+shareable_sums1_return_type sums1(TBufferAccessRequester u_access_requester, TBufferAccessRequester v_access_requester
+	, mse::msear_size_t start_index, mse::msear_size_t section_size) {
+	double sumvb = 0.0, sumvv = 0.0;
+	{
+		auto xscope_u_store = mse::make_xscope_strong_pointer_store(u_access_requester.readlock_ptr());
+		auto u_xscpptr = xscope_u_store.xscope_ptr();
+		auto xscope_v_store = mse::make_xscope_strong_pointer_store(v_access_requester.readlock_ptr());
+		auto v_xscpptr = xscope_v_store.xscope_ptr();
+
+		for (mse::msear_size_t i = start_index; i < start_index + section_size; i++) {
+			sumvv += (*v_xscpptr)[i] * (*v_xscpptr)[i];
+			sumvb += (*u_xscpptr)[i] * (*v_xscpptr)[i];
+		}
+	}
+	shareable_sums1_return_type retval;
+	retval.sumvb = sumvb;
+	retval.sumvv = sumvv;
 	return retval;
-}
-
-template<typename _T4ptr, typename _T5ptr, typename _T6ptr>
-void EvalAtATimesU(const sn_array_accessor_type src, const sn_array_accessor_type dst, const sn_array_accessor_type tmp, _T4ptr src_subspan_access_requesters_ptr,
-	_T5ptr dst_subspan_access_requesters_ptr, _T6ptr tmp_subspan_access_requesters_ptr, mse::CSize_t thread_num) {
-		{
-			auto tmp_span_writelock_ptr = (*tmp_subspan_access_requesters_ptr).at(mse::as_a_size_t(thread_num)).writelock_ptr();
-			auto src_readlock_ptrs = obtain_readlocks_on_all_subspans(src_subspan_access_requesters_ptr);
-			EvalATimesU(src, *tmp_span_writelock_ptr);
-		}
-#pragma omp barrier
-		{
-			auto dst_span_writelock_ptr = (*dst_subspan_access_requesters_ptr).at(mse::as_a_size_t(thread_num)).writelock_ptr();
-			auto tmp_readlock_ptrs = obtain_readlocks_on_all_subspans(tmp_subspan_access_requesters_ptr);
-			EvalAtTimesU(tmp, *dst_span_writelock_ptr);
-		}
-#pragma omp barrier
 }
 
 int GetThreadCount() {
@@ -186,89 +201,77 @@ double spectral_game(mse::msear_size_t N) {
 	//ALIGNAS(16) double u[N];
 	//ALIGNAS(16) double v[N], tmp[N];
 
-	/* Normally we would put use SaferCPlusPlus wrappers on objects that are the target of pointers, but in
-	this case that could interfere with the alignment specifiers required by the SIMD library. Also, a lot
-	of the objects declared in this scope are going to be accessed from asynchronous threads. The rule of
-	thumb is, if you have to share data between asynchronous threads, prefer the simplest possible packaging
-	of that data (or one specifically designed for asynchronous sharing), even when that means foregoing the
-	use of some of the elements in the SaferCPlusPlus library. */
-	ALIGNAS(16) double_array_buffer_type u_buffer;
-	ALIGNAS(16) double_array_buffer_type v_buffer;
-	ALIGNAS(16) double_array_buffer_type tmp_buffer;
+	/* Arguably, the "cleanest" way of sharing objects among threads with SaferCPlusPlus involves allocating the object
+	on the heap. Pre-C++17, "over-aligned" memory allocation on the heap would require a (non-portable) custom allocator.
+	A bit of a hassle. So here we'll allocate the aligned arrays on the stack. And so we'll demonstrate the (not yet
+	documented at the time of this writing) use of the library to safely share stack allocated objects. */
 
-	sn_array_accessor_type u(&u_buffer, 0, N);
-	sn_array_accessor_type v(&v_buffer, 0, N);
-	sn_array_accessor_type tmp(&tmp_buffer, 0, N);
+	/* First we'll declare the aligned array buffers as "access controlled" scope objects. */
+	ALIGNAS(16) mse::TXScopeObj<mse::TXScopeAccessControlledObj<double_array_buffer2_type> > xscope_u2;
+	ALIGNAS(16) mse::TXScopeObj<mse::TXScopeAccessControlledObj<double_array_buffer2_type> > xscope_v2;
+	ALIGNAS(16) mse::TXScopeObj<mse::TXScopeAccessControlledObj<double_array_buffer2_type> > xscope_tmp2;
 
-	auto vBv_access_requester = mse::make_asyncsharedreadwrite<double_container_type>();
-	auto vv_access_requester = mse::make_asyncsharedreadwrite<double_container_type>();
+	/* So that we can obtain "async access requesters" which will provide (data race) safe access to the array buffers. */
+	auto xscope_u2_access_requester = mse::make_xscope_asyncsharedv2acoreadwrite(&xscope_u2);
+	auto xscope_v2_access_requester = mse::make_xscope_asyncsharedv2acoreadwrite(&xscope_v2);
+	auto xscope_tmp2_access_requester = mse::make_xscope_asyncsharedv2acoreadwrite(&xscope_tmp2);
 
-	const mse::CSize_t num_threads = GetThreadCount();
-	mse::msear_size_t max_chunk_size = N / num_threads;
-	std::vector<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWriteAccessRequester<sn_span_type>> u_subspan_access_requesters;
-	std::vector<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWriteAccessRequester<sn_span_type>> v_subspan_access_requesters;
-	std::vector<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWriteAccessRequester<sn_span_type>> tmp_subspan_access_requesters;
-	for (mse::CSize_t i = 0U; i < num_threads; i += 1) {
-		// calculate each thread's working range [r1 .. r2) => static schedule
-		const mse::msear_size_t begin = i * max_chunk_size;
-		const mse::msear_size_t end = (i < (num_threads - 1)) ? (begin + max_chunk_size) : N;
-		const auto chunk_size = end - begin;
+	double vBv2 = 0.0;
+	double vv2 = 0.0;
 
-		u_subspan_access_requesters.emplace_back(mse::make_asyncsharedobjectthatyouaresurehasnounprotectedmutablesreadwrite<sn_span_type>(u, begin, chunk_size));
-		v_subspan_access_requesters.emplace_back(mse::make_asyncsharedobjectthatyouaresurehasnounprotectedmutablesreadwrite<sn_span_type>(v, begin, chunk_size));
-		tmp_subspan_access_requesters.emplace_back(mse::make_asyncsharedobjectthatyouaresurehasnounprotectedmutablesreadwrite<sn_span_type>(tmp, begin, chunk_size));
-	}
-
-#pragma omp parallel default(shared) num_threads(GetThreadCount())
 	{
-		// this block will be executed by NUM_THREADS
-		// variable declared in this block is private for each thread
-		mse::CSize_t threadid = omp_get_thread_num();
+		auto xscope_u2_store = mse::make_xscope_strong_pointer_store(xscope_u2_access_requester.writelock_ptr());
+		auto u2_xscpptr = xscope_u2_store.xscope_ptr();
 
-		auto u_subspan_access_requester_iter = u_subspan_access_requesters.begin();
-		if (u_subspan_access_requesters.size() <= threadid) { std::terminate(); }
-		u_subspan_access_requester_iter += mse::as_a_size_t(threadid);
+		mse::msear_size_t begin = 0;
+		mse::msear_size_t end = N;
 
-		auto v_subspan_access_requester_iter = v_subspan_access_requesters.begin();
-		if (v_subspan_access_requesters.size() <= threadid) { std::terminate(); }
-		v_subspan_access_requester_iter += mse::as_a_size_t(threadid);
-
-		{
-			auto u_subspan_writelock_ptr = (*u_subspan_access_requester_iter).writelock_ptr();
-			auto& u_subspan_ref = (*u_subspan_writelock_ptr);
-			for (mse::msear_size_t i = 0; i < u_subspan_ref.size(); i++) {
-				u_subspan_ref[i] = 1.0;
-			}
+		/* We won't bother to parallelize this part for now. */
+		for (mse::msear_size_t i = begin; i < end; i++) {
+			(*u2_xscpptr)[i] = 1.0;
 		}
-#pragma omp barrier
+	}
+	{
+		/* First we create a list of a the sizes of each section. We'll use a vector here, but any iteratable container will work. */
+		mse::mstd::vector<mse::msear_size_t> section_sizes;
+		mse::mstd::vector<mse::msear_size_t> section_start_indexes;
+
+		const mse::CSize_t num_threads = GetThreadCount();
+		mse::msear_size_t max_chunk_size = N / num_threads;
+		for (mse::CSize_t i = 0U; i < num_threads; i += 1) {
+			// calculate each thread's working range [r1 .. r2) => static schedule
+			const mse::msear_size_t begin = i * max_chunk_size;
+			const mse::msear_size_t end = (i < (num_threads - 1)) ? (begin + max_chunk_size) : N;
+			const auto chunk_size = end - begin;
+
+			section_sizes.emplace_back(chunk_size);
+			section_start_indexes.emplace_back(begin);
+		}
 
 		for (mse::msear_size_t ite = 0; ite < 10; ++ite) {
-			EvalAtATimesU(u, v, tmp, &u_subspan_access_requesters, &v_subspan_access_requesters, &tmp_subspan_access_requesters, threadid);
-			EvalAtATimesU(v, u, tmp, &v_subspan_access_requesters, &u_subspan_access_requesters, &tmp_subspan_access_requesters, threadid);
+			EvalAtTimesU_V2(xscope_u2_access_requester, xscope_v2_access_requester, xscope_tmp2_access_requester, section_sizes, N, max_chunk_size, num_threads);
+			EvalAtTimesU_V2(xscope_v2_access_requester, xscope_u2_access_requester, xscope_tmp2_access_requester, section_sizes, N, max_chunk_size, num_threads);
 		}
 
-		double sumvb = 0.0, sumvv = 0.0;
 		{
-			auto u_span_readlock_ptr = (*u_subspan_access_requester_iter).readlock_ptr();
-			const auto& u_subspan_ref = (*u_span_readlock_ptr);
-			auto v_span_readlock_ptr = (*v_subspan_access_requester_iter).readlock_ptr();
-			const auto& v_subspan_ref = (*v_span_readlock_ptr);
-			for (mse::msear_size_t i = 0; i < v_subspan_ref.size(); i++) {
-				sumvv += v_subspan_ref[i] * v_subspan_ref[i];
-				sumvb += u_subspan_ref[i] * v_subspan_ref[i];
+			typedef mse::xscope_future_carrier<shareable_sums1_return_type> xscope_futures_t;
+			xscope_futures_t xscope_futures;
+			mse::mstd::vector<xscope_futures_t::handle_t> future_handles;
+			for (size_t i = 0; i < num_threads; i += 1) {
+				/* Adding a new future automatically launches an associated (std::async()) task with the given parameters. */
+				auto handle = xscope_futures.new_future(sums1<decltype(xscope_u2_access_requester), decltype(xscope_v2_access_requester)>
+					, xscope_u2_access_requester, xscope_v2_access_requester, section_start_indexes[i], section_sizes[i]);
+				future_handles.push_back(handle);
 			}
-		}
-
-#pragma omp critical
-		{
-			(*(vBv_access_requester.writelock_ptr())).m_value += sumvb;
-			(*(vv_access_requester.writelock_ptr())).m_value += sumvv;
+			for (auto it = future_handles.begin(); future_handles.end() != it; it++) {
+				auto res = xscope_futures.xscope_ptr_at(*it)->get();
+				vBv2 += res.sumvb;
+				vv2 += res.sumvv;
+			}
 		}
 	}
 
-	const auto vBv = (*(vBv_access_requester.readlock_ptr())).m_value;
-	const auto vv = (*(vv_access_requester.readlock_ptr())).m_value;
-	return sqrt(vBv / vv);
+	return sqrt(vBv2 / vv2);
 }
 
 int main(int argc, char *argv[]) {

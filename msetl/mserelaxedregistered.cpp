@@ -4,10 +4,19 @@
 // License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
 
+/* todo: Change implementation to use thread-local storage for the "CSPTracker"s. That will eliminate the need
+for a global instance of a CSPTrackerMap, and thus, the need for this cpp source file. It will also require the
+complete prohibition of sharing relaxed registered pointers between threads. */
+
 #include "mserelaxedregistered.h"
 
-#ifdef _MSC_VER
+#ifdef MSE_USE_WINDOWS_THREADID
 #include "windows.h"
+#endif /*MSE_USE_WINDOWS_THREADID*/
+
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4127 )
 #endif /*_MSC_VER*/
 
 
@@ -191,11 +200,15 @@ namespace mse {
 		removeObjectFromFastStorage1(fs1_obj_index);
 	}
 
-#ifdef _MSC_VER
+#ifdef MSE_USE_WINDOWS_THREADID
 	MSE_THREAD_ID_TYPE CSPTrackerMap::mseWindowsGetCurrentThreadId() {
 		return GetCurrentThreadId();
 	}
-#endif /*_MSC_VER*/
+#endif /*MSE_USE_WINDOWS_THREADID*/
 
 	CSPTrackerMap gSPTrackerMap;
 }
+
+#ifdef _MSC_VER
+#pragma warning( pop )  
+#endif /*_MSC_VER*/

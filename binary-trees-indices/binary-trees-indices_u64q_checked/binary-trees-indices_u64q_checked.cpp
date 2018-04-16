@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 		auto depth = minDepth + depthIteration * 2;
 
 		auto iterations = 1 << (maxDepth - depth + minDepth);
-		auto check = 0;
+		mse::CInt check = 0;
 		for (auto i = 1; i <= iterations; i += 1) {
 			shortLivedPool.resize(0);
 			auto t1 = buildTree(shortLivedPool, i, depth);

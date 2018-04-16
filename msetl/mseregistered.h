@@ -8,11 +8,21 @@
 #ifndef MSEREGISTERED_H_
 #define MSEREGISTERED_H_
 
-#include "mseprimitives.h"
+//include "mseprimitives.h"
+#include "msepointerbasics.h"
 #include <utility>
 #include <unordered_set>
 #include <functional>
 #include <cassert>
+
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4100 4456 4189 )
+#endif /*_MSC_VER*/
+
+#ifndef _NOEXCEPT
+#define _NOEXCEPT
+#endif /*_NOEXCEPT*/
 
 
 #if defined(MSE_SAFER_SUBSTITUTES_DISABLED) || defined(MSE_SAFERPTR_DISABLED)
@@ -36,6 +46,9 @@ namespace mse {
 	template<typename _Ty, int _Tn = sc_default_cache_size> using TRegisteredFixedConstPointer = const _Ty*;
 	template<typename _TROy, int _Tn = sc_default_cache_size> using TRegisteredObj = _TROy;
 	template <class _TRRWy, int _TRRWn = sc_default_cache_size> using TRegisteredRefWrapper = std::reference_wrapper<_TRRWy>;
+
+	template<typename _Ty> auto registered_fptr_to(_Ty&& _X) { return &_X; }
+	template<typename _Ty> auto registered_fptr_to(const _Ty& _X) { return &_X; }
 
 #else /*MSE_REGISTEREDPOINTER_DISABLED*/
 
@@ -216,6 +229,29 @@ namespace mse {
 				}
 			}
 		}
+		void reserve_space_for_one_more() {
+			/* The purpose of this function is to ensure that the next call to registerPointer() won't
+			need to allocate more memory, and thus won't have any chance of throwing an exception due to
+			memory allocation failure. */
+			if (!fast_mode1()) {
+				(*m_ptr_to_regptr_set_ptr).reserve((*m_ptr_to_regptr_set_ptr).size() + 1);
+			}
+			else if (sc_fm1_max_pointers == m_fm1_num_pointers) {
+				/* At this point, a call to registerPointer() would result in a switch out of fast mode
+				and the allocation of an std::unordered_set. We'll trigger that event now by adding and
+				removing a placeholder pointer. */
+				class CPlaceHolderPtr : public CSaferPtrBase {
+				public:
+					void setToNull() const {}
+				};
+				CPlaceHolderPtr placeholder_ptr;
+				(*this).registerPointer(placeholder_ptr);
+				(*this).unregisterPointer(placeholder_ptr);
+
+				assert(m_ptr_to_regptr_set_ptr);
+				//(*m_ptr_to_regptr_set_ptr).reserve((*m_ptr_to_regptr_set_ptr).size() + 1);
+			}
+		}
 
 		bool fast_mode1() const { return (nullptr == m_ptr_to_regptr_set_ptr); }
 		int m_fm1_num_pointers = 0;
@@ -279,6 +315,15 @@ namespace mse {
 					(*sp_ref_ptr).setToNull();
 				}
 			}
+		}
+		void reserve_space_for_one_more() {
+			/* The purpose of this function is to ensure that the next call to registerPointer() won't
+			need to allocate more memory, and thus won't have any chance of throwing an exception due to
+			memory allocation failure. */
+			if (!m_ptr_to_regptr_set_ptr) {
+				m_ptr_to_regptr_set_ptr = new std::unordered_set<const CSaferPtrBase*>();
+			}
+			(*m_ptr_to_regptr_set_ptr).reserve((*m_ptr_to_regptr_set_ptr).size() + 1);
 		}
 
 		std::unordered_set<const CSaferPtrBase*> *m_ptr_to_regptr_set_ptr = nullptr;
@@ -368,10 +413,17 @@ namespace mse {
 	class TRegisteredNotNullPointer : public TRegisteredPointer<_Ty, _Tn> {
 	public:
 		TRegisteredNotNullPointer(const TRegisteredNotNullPointer& src_cref) : TRegisteredPointer<_Ty, _Tn>(src_cref) {}
-		template<class _Ty2, class = typename std::enable_if<
-			std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value
-			, void>::type>
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value, void>::type>
 		TRegisteredNotNullPointer(const TRegisteredNotNullPointer<_Ty2, _Tn>& src_cref) : TRegisteredPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredNotNullPointer(const TRegisteredPointer<_Ty, _Tn>& src_cref) : TRegisteredPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value, void>::type>
+		TRegisteredNotNullPointer(const TRegisteredPointer<_Ty2, _Tn>& src_cref) : TRegisteredPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+
 		virtual ~TRegisteredNotNullPointer() {}
 		TRegisteredNotNullPointer<_Ty, _Tn>& operator=(const TRegisteredNotNullPointer<_Ty, _Tn>& _Right_cref) {
 			TRegisteredPointer<_Ty, _Tn>::operator=(_Right_cref);
@@ -399,6 +451,22 @@ namespace mse {
 		TRegisteredNotNullConstPointer(const TRegisteredNotNullPointer<_Ty, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
 		TRegisteredNotNullConstPointer(const TRegisteredNotNullPointer<_Ty2, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredNotNullConstPointer(const TRegisteredConstPointer<_Ty, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredNotNullConstPointer(const TRegisteredConstPointer<_Ty2, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		TRegisteredNotNullConstPointer(const TRegisteredPointer<_Ty, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredNotNullConstPointer(const TRegisteredPointer<_Ty2, _Tn>& src_cref) : TRegisteredConstPointer<_Ty, _Tn>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+
 		virtual ~TRegisteredNotNullConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return TRegisteredConstPointer<_Ty, _Tn>::operator const _Ty*(); }
@@ -419,10 +487,17 @@ namespace mse {
 	class TRegisteredFixedPointer : public TRegisteredNotNullPointer<_Ty, _Tn> {
 	public:
 		TRegisteredFixedPointer(const TRegisteredFixedPointer& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
-		template<class _Ty2, class = typename std::enable_if<
-			std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value
-			, void>::type>
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value, void>::type>
 		TRegisteredFixedPointer(const TRegisteredFixedPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredFixedPointer(const TRegisteredNotNullPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value, void>::type>
+		TRegisteredFixedPointer(const TRegisteredNotNullPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredFixedPointer(const TRegisteredPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value || std::is_same<const _Ty2, _Ty>::value, void>::type>
+		TRegisteredFixedPointer(const TRegisteredPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullPointer<_Ty, _Tn>(src_cref) {}
+
 		virtual ~TRegisteredFixedPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator _Ty*() const { return TRegisteredNotNullPointer<_Ty, _Tn>::operator _Ty*(); }
@@ -447,6 +522,21 @@ namespace mse {
 		TRegisteredFixedConstPointer(const TRegisteredFixedPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
 		TRegisteredFixedConstPointer(const TRegisteredFixedPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredFixedConstPointer(const TRegisteredNotNullConstPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredFixedConstPointer(const TRegisteredNotNullConstPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		TRegisteredFixedConstPointer(const TRegisteredNotNullPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredFixedConstPointer(const TRegisteredNotNullPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+
+		TRegisteredFixedConstPointer(const TRegisteredConstPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredFixedConstPointer(const TRegisteredConstPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		TRegisteredFixedConstPointer(const TRegisteredPointer<_Ty, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<TRegisteredObj<_Ty2, _Tn> *, TRegisteredObj<_Ty, _Tn> *>::value, void>::type>
+		TRegisteredFixedConstPointer(const TRegisteredPointer<_Ty2, _Tn>& src_cref) : TRegisteredNotNullConstPointer<_Ty, _Tn>(src_cref) {}
+
 		virtual ~TRegisteredFixedConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return TRegisteredNotNullConstPointer<_Ty, _Tn>::operator const _Ty*(); }
@@ -462,36 +552,52 @@ namespace mse {
 		friend class TRegisteredObj<_Ty, _Tn>;
 	};
 
+
 	/* TRegisteredObj is intended as a transparent wrapper for other classes/objects. The purpose is to register the object's
 	destruction so that TRegisteredPointers will avoid referencing destroyed objects. Note that TRegisteredObj can be used with
 	objects allocated on the stack. */
 	template<typename _TROy, int _Tn>
-	class TRegisteredObj : public _TROy {
+	class TRegisteredObj : public _TROy
+		, public std::conditional<!std::is_convertible<_TROy*, NotAsyncShareableTagBase*>::value, NotAsyncShareableTagBase, TPlaceHolder_msepointerbasics<TRegisteredObj<_TROy, _Tn> > >::type
+	{
 	public:
 		MSE_USING(TRegisteredObj, _TROy);
 		TRegisteredObj(const TRegisteredObj& _X) : _TROy(_X) {}
-		TRegisteredObj(TRegisteredObj&& _X) : _TROy(std::move(_X)) {}
+		TRegisteredObj(TRegisteredObj&& _X) : _TROy(std::forward<decltype(_X)>(_X)) {}
 		virtual ~TRegisteredObj() {
 			mseRPManager().onObjectDestruction();
 		}
-		using _TROy::operator=;
-		//TRegisteredObj& operator=(TRegisteredObj&& _X) { _TROy::operator=(std::move(_X)); return (*this); }
-		TRegisteredObj& operator=(typename std::conditional<std::is_const<_TROy>::value
-			, std::nullptr_t, TRegisteredObj>::type&& _X) { _TROy::operator=(std::move(_X)); return (*this); }
-		//TRegisteredObj& operator=(const TRegisteredObj& _X) { _TROy::operator=(_X); return (*this); }
-		TRegisteredObj& operator=(const typename std::conditional<std::is_const<_TROy>::value
-			, std::nullptr_t, TRegisteredObj>::type& _X) { _TROy::operator=(_X); return (*this); }
+
+		TRegisteredObj& operator=(TRegisteredObj&& _X) { _TROy::operator=(std::forward<decltype(_X)>(_X)); return (*this); }
+		TRegisteredObj& operator=(const TRegisteredObj& _X) { _TROy::operator=(_X); return (*this); }
+		template<class _Ty2>
+		TRegisteredObj& operator=(_Ty2&& _X) { _TROy::operator=(std::forward<decltype(_X)>(_X)); return (*this); }
+		template<class _Ty2>
+		TRegisteredObj& operator=(const _Ty2& _X) { _TROy::operator=(_X); return (*this); }
+
 		TRegisteredFixedPointer<_TROy, _Tn> operator&() {
 			return this;
 		}
 		TRegisteredFixedConstPointer<_TROy, _Tn> operator&() const {
 			return this;
 		}
+		TRegisteredFixedPointer<_TROy> mse_registered_fptr() { return this; }
+		TRegisteredFixedConstPointer<_TROy> mse_registered_fptr() const { return this; }
 
 		TRPTracker<_Tn>& mseRPManager() const { return m_mseRPManager; }
 
+	private:
 		mutable TRPTracker<_Tn> m_mseRPManager;
 	};
+
+	template<typename _Ty>
+	auto registered_fptr_to(_Ty&& _X) {
+		return _X.mse_registered_fptr();
+	}
+	template<typename _Ty>
+	auto registered_fptr_to(const _Ty& _X) {
+		return _X.mse_registered_fptr();
+	}
 
 	template<typename _Ty, int _Tn>
 	TRegisteredPointer<_Ty, _Tn>::TRegisteredPointer() : TSaferPtr<TRegisteredObj<_Ty, _Tn>>() {}
@@ -526,12 +632,22 @@ namespace mse {
 	}
 	template<typename _Ty, int _Tn>
 	TRegisteredPointer<_Ty, _Tn>& TRegisteredPointer<_Ty, _Tn>::operator=(TRegisteredObj<_Ty, _Tn>* ptr) {
-		if (nullptr != (*this).m_ptr) {
-			(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
-		}
-		TSaferPtr<TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 		if (nullptr != ptr) {
+			/* Here we're just ensuring that the registerPointer() call won't throw an exception (due to
+			memory allocation failure).*/
+			(*ptr).mseRPManager().reserve_space_for_one_more();
+
+			if (nullptr != (*this).m_ptr) {
+				(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
+			}
+			TSaferPtr<TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 			(*ptr).mseRPManager().registerPointer(*this);
+		}
+		else {
+			if (nullptr != (*this).m_ptr) {
+				(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
+			}
+			TSaferPtr<TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 		}
 		return (*this);
 	}
@@ -542,17 +658,21 @@ namespace mse {
 	/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 	template<typename _Ty, int _Tn>
 	TRegisteredPointer<_Ty, _Tn>::operator _Ty*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 		if (nullptr == (*this).m_ptr) {
 			int q = 5; /* just a line of code for putting a debugger break point */
 		}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 		return (*this).m_ptr;
 	}
 	/* This cast operator, if possible, should not be used. It is meant to be used exclusively by registered_delete<>(). */
 	template<typename _Ty, int _Tn>
 	TRegisteredPointer<_Ty, _Tn>::operator TRegisteredObj<_Ty, _Tn>*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 		if (nullptr == (*this).m_ptr) {
 			int q = 5; /* just a line of code for putting a debugger break point */
 		}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 		return (*this).m_ptr;
 	}
 
@@ -599,12 +719,22 @@ namespace mse {
 	}
 	template<typename _Ty, int _Tn>
 	TRegisteredConstPointer<_Ty, _Tn>& TRegisteredConstPointer<_Ty, _Tn>::operator=(const TRegisteredObj<_Ty, _Tn>* ptr) {
-		if (nullptr != (*this).m_ptr) {
-			(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
-		}
-		TSaferPtr<const TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 		if (nullptr != ptr) {
+			/* Here we're just ensuring that the registerPointer() call won't throw an exception (due to
+			memory allocation failure).*/
+			(*ptr).mseRPManager().reserve_space_for_one_more();
+
+			if (nullptr != (*this).m_ptr) {
+				(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
+			}
+			TSaferPtr<const TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 			(*ptr).mseRPManager().registerPointer(*this);
+		}
+		else {
+			if (nullptr != (*this).m_ptr) {
+				(*((*this).m_ptr)).mseRPManager().unregisterPointer(*this);
+			}
+			TSaferPtr<const TRegisteredObj<_Ty, _Tn>>::operator=(ptr);
 		}
 		return (*this);
 	}
@@ -615,19 +745,102 @@ namespace mse {
 	/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 	template<typename _Ty, int _Tn>
 	TRegisteredConstPointer<_Ty, _Tn>::operator const _Ty*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 		if (nullptr == (*this).m_ptr) {
 			int q = 5; /* just a line of code for putting a debugger break point */
 		}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 		return (*this).m_ptr;
 	}
 	/* This cast operator, if possible, should not be used. It is meant to be used exclusively by registered_delete<>(). */
 	template<typename _Ty, int _Tn>
 	TRegisteredConstPointer<_Ty, _Tn>::operator const TRegisteredObj<_Ty, _Tn>*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 		if (nullptr == (*this).m_ptr) {
 			int q = 5; /* just a line of code for putting a debugger break point */
 		}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 		return (*this).m_ptr;
 	}
+}
+
+namespace std {
+	template<class _Ty>
+	struct hash<mse::TRegisteredPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRegisteredNotNullPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredNotNullPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredNotNullPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRegisteredFixedPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredFixedPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredFixedPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+
+	template<class _Ty>
+	struct hash<mse::TRegisteredConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRegisteredNotNullConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredNotNullConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredNotNullConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRegisteredFixedConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRegisteredFixedConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRegisteredFixedConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+}
+
+namespace mse {
 
 #endif /*MSE_REGISTEREDPOINTER_DISABLED*/
 
@@ -639,140 +852,14 @@ namespace mse {
 	template <class _Ty, int _Tn = sc_default_cache_size>
 	void registered_delete(const TRegisteredPointer<_Ty, _Tn>& regPtrRef) {
 		//auto a = dynamic_cast<TRegisteredObj<_Ty, _Tn> *>((_Ty*)regPtrRef);
-		auto a = (TRegisteredObj<_Ty, _Tn>*)regPtrRef;
+		auto a = static_cast<TRegisteredObj<_Ty, _Tn>*>(regPtrRef);
 		delete a;
 	}
 	template <class _Ty, int _Tn = sc_default_cache_size>
 	void registered_delete(const TRegisteredConstPointer<_Ty, _Tn>& regPtrRef) {
 		//auto a = dynamic_cast<TRegisteredObj<_Ty, _Tn> *>((_Ty*)regPtrRef);
-		auto a = (const TRegisteredObj<_Ty, _Tn>*)regPtrRef;
+		auto a = static_cast<const TRegisteredObj<_Ty, _Tn>*>(regPtrRef);
 		delete a;
-	}
-
-	template <class _TTargetType, class _TLeasePointerType> class TSyncWeakFixedConstPointer;
-
-	/* If, for example, you want a safe pointer to a member of a registered pointer target, you can use a
-	TSyncWeakFixedPointer to store a copy of the registered pointer along with the pointer targeting the
-	member. */
-	template <class _TTargetType, class _TLeasePointerType>
-	class TSyncWeakFixedPointer {
-	public:
-		TSyncWeakFixedPointer(const TSyncWeakFixedPointer&) = default;
-		template<class _TLeasePointerType2, class = typename std::enable_if<std::is_convertible<_TLeasePointerType2, _TLeasePointerType>::value, void>::type>
-		TSyncWeakFixedPointer(const TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType2>&src) : m_target_pointer(std::addressof(*src)), m_lease_pointer(src.lease_pointer()) {}
-		_TTargetType& operator*() const {
-			const auto &test_cref = *m_lease_pointer; // this should throw if m_lease_pointer is no longer valid
-			return (*m_target_pointer);
-		}
-		_TTargetType* operator->() const {
-			const auto &test_cref = *m_lease_pointer; // this should throw if m_lease_pointer is no longer valid
-			return m_target_pointer;
-		}
-
-		bool operator==(const _TTargetType* _Right_cref) const { return (_Right_cref == m_target_pointer); }
-		bool operator!=(const _TTargetType* _Right_cref) const { return (!((*this) == _Right_cref)); }
-		bool operator==(const TSyncWeakFixedPointer &_Right_cref) const { return (_Right_cref == m_target_pointer); }
-		bool operator!=(const TSyncWeakFixedPointer &_Right_cref) const { return (!((*this) == _Right_cref)); }
-		bool operator==(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const;
-		bool operator!=(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const;
-
-		bool operator!() const { return (!m_target_pointer); }
-		operator bool() const {
-			return (m_target_pointer != nullptr);
-		}
-
-		explicit operator _TTargetType*() const {
-			if (nullptr == m_target_pointer) {
-				int q = 3; /* just a line of code for putting a debugger break point */
-			}
-			return m_target_pointer;
-		}
-		_TLeasePointerType lease_pointer() const { return (*this).m_lease_pointer; }
-
-		template <class _TTargetType2, class _TLeasePointerType2>
-		static TSyncWeakFixedPointer make(_TTargetType2& target, const _TLeasePointerType2& lease_pointer) {
-			return TSyncWeakFixedPointer(target, lease_pointer);
-		}
-
-	private:
-		TSyncWeakFixedPointer(_TTargetType& target/* often a struct member */, _TLeasePointerType lease_pointer/* usually a registered pointer */)
-			: m_target_pointer(&target), m_lease_pointer(lease_pointer) {}
-		TSyncWeakFixedPointer& operator=(const TSyncWeakFixedPointer& _Right_cref) = delete;
-
-		_TTargetType* m_target_pointer;
-		_TLeasePointerType m_lease_pointer;
-		friend class TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType>;
-	};
-
-	template <class _TTargetType, class _TLeasePointerType>
-	TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType> make_syncweak(_TTargetType& target, const _TLeasePointerType& lease_pointer) {
-		return TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::make(target, lease_pointer);
-	}
-
-	template <class _TTargetType, class _TLeasePointerType>
-	class TSyncWeakFixedConstPointer {
-	public:
-		TSyncWeakFixedConstPointer(const TSyncWeakFixedConstPointer&) = default;
-		template<class _TLeasePointerType2, class = typename std::enable_if<std::is_convertible<_TLeasePointerType2, _TLeasePointerType>::value, void>::type>
-		TSyncWeakFixedConstPointer(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType2>&src) : m_target_pointer(std::addressof(*src)), m_lease_pointer(src.lease_pointer()) {}
-		TSyncWeakFixedConstPointer(const TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>&src) : m_target_pointer(src.m_target_pointer), m_lease_pointer(src.m_lease_pointer) {}
-		const _TTargetType& operator*() const {
-			const auto &test_cref = *m_lease_pointer; // this should throw if m_lease_pointer is no longer valid
-			return (*m_target_pointer);
-		}
-		const _TTargetType* operator->() const {
-			const auto &test_cref = *m_lease_pointer; // this should throw if m_lease_pointer is no longer valid
-			return m_target_pointer;
-		}
-
-		bool operator==(const _TTargetType* _Right_cref) const { return (_Right_cref == m_target_pointer); }
-		bool operator!=(const _TTargetType* _Right_cref) const { return (!((*this) == _Right_cref)); }
-		bool operator==(const TSyncWeakFixedConstPointer &_Right_cref) const { return (_Right_cref == m_target_pointer); }
-		bool operator!=(const TSyncWeakFixedConstPointer &_Right_cref) const { return (!((*this) == _Right_cref)); }
-
-		bool operator!() const { return (!m_target_pointer); }
-		operator bool() const {
-			return (m_target_pointer != nullptr);
-		}
-
-		explicit operator const _TTargetType*() const {
-			if (nullptr == m_target_pointer) {
-				int q = 3; /* just a line of code for putting a debugger break point */
-			}
-			return m_target_pointer;
-		}
-		_TLeasePointerType lease_pointer() const { return (*this).m_lease_pointer; }
-
-		template <class _TTargetType2, class _TLeasePointerType2>
-		static TSyncWeakFixedConstPointer make(const _TTargetType2& target, const _TLeasePointerType2& lease_pointer) {
-			return TSyncWeakFixedConstPointer(target, lease_pointer);
-		}
-
-	private:
-		TSyncWeakFixedConstPointer(const _TTargetType& target/* often a struct member */, _TLeasePointerType lease_pointer/* usually a registered pointer */)
-			: m_target_pointer(&target), m_lease_pointer(lease_pointer) {}
-		TSyncWeakFixedConstPointer& operator=(const TSyncWeakFixedConstPointer& _Right_cref) = delete;
-
-		const _TTargetType* m_target_pointer;
-		_TLeasePointerType m_lease_pointer;
-	};
-
-	template <class _TTargetType, class _TLeasePointerType>
-	bool TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::operator==(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const { return (_Right_cref == m_target_pointer); }
-	template <class _TTargetType, class _TLeasePointerType>
-	bool TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>::operator!=(const TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType> &_Right_cref) const { return (!((*this) == _Right_cref)); }
-
-	template<class _TTargetType, class _Ty>
-	TSyncWeakFixedPointer<_TTargetType, _Ty> make_pointer_to_member(_TTargetType& target, const _Ty &lease_pointer) {
-		return TSyncWeakFixedPointer<_TTargetType, _Ty>::make(target, lease_pointer);
-	}
-	template<class _TTargetType, class _Ty>
-	TSyncWeakFixedConstPointer<_TTargetType, _Ty> make_pointer_to_member(const _TTargetType& target, const _Ty &lease_pointer) {
-		return TSyncWeakFixedConstPointer<_TTargetType, _Ty>::make(target, lease_pointer);
-	}
-	template<class _TTargetType, class _Ty>
-	TSyncWeakFixedConstPointer<_TTargetType, _Ty> make_const_pointer_to_member(const _TTargetType& target, const _Ty &lease_pointer) {
-		return TSyncWeakFixedConstPointer<_TTargetType, _Ty>::make(target, lease_pointer);
 	}
 
 #ifdef MSE_REGISTEREDPOINTER_DISABLED
@@ -795,7 +882,7 @@ namespace mse {
 
 #ifdef MSEREGISTEREDREFWRAPPER
 	template <class _TRRWy, int _TRRWn = sc_default_cache_size>
-	class TRegisteredRefWrapper {
+	class TRegisteredRefWrapper : public NotAsyncShareableTagBase {
 	public:
 		// types
 		typedef TRegisteredObj<_TRRWy, _TRRWn> type;
@@ -841,6 +928,19 @@ namespace mse {
 	TRegisteredPointer<_Ty, _Tn> rnew(Args&&... args) { return registered_new<_Ty, _Tn>(std::forward<Args>(args)...); }
 	template <class _Ty, int _Tn = sc_default_cache_size>
 	void rdelete(const TRegisteredPointer<_Ty, _Tn>& regPtrRef) { registered_delete<_Ty, _Tn>(regPtrRef); }
+
+	/* These functions create a registered object assuming the type is the same as the lone parameter, so you don't need
+	to explicitly specify it. */
+	template <typename _TLoneParam>
+	auto mkrolp(const _TLoneParam& lone_param) {
+		return TRegisteredObj<_TLoneParam>(lone_param);
+	}
+	template <typename _TLoneParam>
+	auto mkrolp(_TLoneParam&& lone_param) {
+		return TRegisteredObj<_TLoneParam>(std::forward<decltype(lone_param)>(lone_param));
+	}
+
+	/* deprecated aliases */
 	template<class _TTargetType, class _TLeasePointerType> using swkfp = TSyncWeakFixedPointer<_TTargetType, _TLeasePointerType>;
 	template<class _TTargetType, class _TLeasePointerType> using swkfcp = TSyncWeakFixedConstPointer<_TTargetType, _TLeasePointerType>;
 
@@ -884,171 +984,208 @@ namespace mse {
 	}
 #endif // MSEREGISTEREDREFWRAPPER
 
-	static void s_regptr_test1() {
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
+	class CRegPtrTest1 {
+	public:
+		static void s_test1() {
 #ifdef MSE_SELF_TESTS
-
-		class A {
-		public:
-			A() {}
-			A(const A& _X) : b(_X.b) {}
-			A(A&& _X) : b(std::move(_X.b)) {}
-			virtual ~A() {}
-			A& operator=(A&& _X) { b = std::move(_X.b); return (*this); }
-			A& operator=(const A& _X) { b = _X.b; return (*this); }
-
-			int b = 3;
-		};
-		class B {
-		public:
-			static int foo1(A* a_native_ptr) { return a_native_ptr->b; }
-			static int foo2(mse::TRegisteredPointer<A> A_registered_ptr) { return A_registered_ptr->b; }
-		protected:
-			~B() {}
-		};
-
-		A* A_native_ptr = nullptr;
-		/* mse::TRegisteredPointer<> is basically a "safe" version of the native pointer. */
-		mse::TRegisteredPointer<A> A_registered_ptr1;
-
-		{
-			A a;
-			mse::TRegisteredObj<A> registered_a;
-			/* mse::TRegisteredObj<A> is a class that is publicly derived from A, and so should be a compatible substitute for A
-			in almost all cases. */
-
-			assert(a.b == registered_a.b);
-			A_native_ptr = &a;
-			A_registered_ptr1 = &registered_a;
-			assert(A_native_ptr->b == A_registered_ptr1->b);
-
-			mse::TRegisteredPointer<A> A_registered_ptr2 = &registered_a;
-			A_registered_ptr2 = nullptr;
-#ifndef MSE_REGISTEREDPOINTER_DISABLED
-			bool expected_exception = false;
-			try {
-				int i = A_registered_ptr2->b; /* this is gonna throw an exception */
-			}
-			catch (...) {
-				//std::cerr << "expected exception" << std::endl;
-				expected_exception = true;
-				/* The exception is triggered by an attempt to dereference a null "registered pointer". */
-			}
-			assert(expected_exception);
-#endif // !MSE_REGISTEREDPOINTER_DISABLED
-
-			/* mse::TRegisteredPointers can be coerced into native pointers if you need to interact with legacy code or libraries. */
-			B::foo1((A*)A_registered_ptr1);
-
-			if (A_registered_ptr2) {
-			}
-			else if (A_registered_ptr2 != A_registered_ptr1) {
-				A_registered_ptr2 = A_registered_ptr1;
-				assert(A_registered_ptr2 == A_registered_ptr1);
-			}
-
-			A a2 = a;
-			mse::TRegisteredObj<A> registered_a2 = registered_a;
-
-			a2 = std::move(a);
-			registered_a2 = std::move(registered_a);
-
-			A a3(std::move(a2));
-			mse::TRegisteredObj<A> registered_a3(std::move(registered_a2));
-
-			mse::TRegisteredConstPointer<A> rcp = A_registered_ptr1;
-			mse::TRegisteredConstPointer<A> rcp2 = rcp;
-			const mse::TRegisteredObj<A> cregistered_a;
-			rcp = &cregistered_a;
-			mse::TRegisteredFixedConstPointer<A> rfcp = &cregistered_a;
-			rcp = mse::registered_new<A>();
-			mse::registered_delete<A>(rcp);
-		}
-
-		bool expected_exception = false;
-#ifndef MSE_REGISTEREDPOINTER_DISABLED
-		try {
-			/* A_registered_ptr1 "knows" that the (registered) object it was pointing to has now been deallocated. */
-			int i = A_registered_ptr1->b; /* So this is gonna throw an exception */
-		}
-		catch (...) {
-			//std::cerr << "expected exception" << std::endl;
-			expected_exception = true;
-		}
-		assert(expected_exception);
-#endif // !MSE_REGISTEREDPOINTER_DISABLED
-
-		{
-			/* For heap allocations mse::registered_new is kind of analagous to std::make_shared, but again,
-			mse::TRegisteredPointers don't take ownership so you are responsible for deallocation. */
-			auto A_registered_ptr3 = mse::registered_new<A>();
-			assert(3 == A_registered_ptr3->b);
-			mse::registered_delete<A>(A_registered_ptr3);
-			bool expected_exception = false;
-#ifndef MSE_REGISTEREDPOINTER_DISABLED
-			try {
-				/* A_registered_ptr3 "knows" that the (registered) object it was pointing to has now been deallocated. */
-				int i = A_registered_ptr3->b; /* So this is gonna throw an exception */
-			}
-			catch (...) {
-				//std::cerr << "expected exception" << std::endl;
-				expected_exception = true;
-			}
-			assert(expected_exception);
-#endif // !MSE_REGISTEREDPOINTER_DISABLED
-		}
-
-		{
-			/* Remember that registered pointers can only point to registered objects. So, for example, if you want
-			a registered pointer to an object's base class object, that base class object has to be a registered
-			object. */
-			class DA : public mse::TRegisteredObj<A> {};
-			mse::TRegisteredObj<DA> registered_da;
-			mse::TRegisteredPointer<DA> DA_registered_ptr1 = &registered_da;
-			mse::TRegisteredPointer<A> A_registered_ptr4 = DA_registered_ptr1;
-			A_registered_ptr4 = &registered_da;
-			mse::TRegisteredFixedPointer<A> A_registered_fptr1 = &registered_da;
-			mse::TRegisteredFixedConstPointer<A> A_registered_fcptr1 = &registered_da;
-		}
-
-		{
-			/* Obtaining safe pointers to members of registered objects: */
-			class E {
+			class A {
 			public:
-				virtual ~E() {}
-				mse::TRegisteredObj<std::string> reg_s = "some text ";
-				std::string s2 = "some other text ";
+				A() {}
+				A(const A& _X) : b(_X.b) {}
+				A(A&& _X) : b(std::forward<decltype(_X.b)>(_X.b)) {}
+				virtual ~A() {}
+				A& operator=(A&& _X) { b = std::forward<decltype(_X.b)>(_X.b); return (*this); }
+				A& operator=(const A& _X) { b = _X.b; return (*this); }
+
+				int b = 3;
+			};
+			class B {
+			public:
+				static int foo1(A* a_native_ptr) { return a_native_ptr->b; }
+				static int foo2(mse::TRegisteredPointer<A> A_registered_ptr) { return A_registered_ptr->b; }
+			protected:
+				~B() {}
 			};
 
-			mse::TRegisteredObj<E> registered_e;
-			mse::TRegisteredPointer<E> E_registered_ptr1 = &registered_e;
+			A* A_native_ptr = nullptr;
+			/* mse::TRegisteredPointer<> is basically a "safe" version of the native pointer. */
+			mse::TRegisteredPointer<A> A_registered_ptr1;
 
-			/* To obtain a safe pointer to a member of a registered object you could just make the
+			{
+				A a;
+				mse::TRegisteredObj<A> registered_a;
+				/* mse::TRegisteredObj<A> is a class that is publicly derived from A, and so should be a compatible substitute for A
+			in almost all cases. */
+
+				assert(a.b == registered_a.b);
+				A_native_ptr = &a;
+				A_registered_ptr1 = &registered_a;
+				assert(A_native_ptr->b == A_registered_ptr1->b);
+
+				mse::TRegisteredPointer<A> A_registered_ptr2 = &registered_a;
+				A_registered_ptr2 = nullptr;
+#ifndef MSE_REGISTEREDPOINTER_DISABLED
+				bool expected_exception = false;
+				try {
+					int i = A_registered_ptr2->b; /* this is gonna throw an exception */
+				}
+				catch (...) {
+					//std::cerr << "expected exception" << std::endl;
+					expected_exception = true;
+					/* The exception is triggered by an attempt to dereference a null "registered pointer". */
+				}
+				assert(expected_exception);
+#endif // !MSE_REGISTEREDPOINTER_DISABLED
+
+				/* mse::TRegisteredPointers can be coerced into native pointers if you need to interact with legacy code or libraries. */
+				B::foo1(static_cast<A*>(A_registered_ptr1));
+
+				if (A_registered_ptr2) {
+					assert(false);
+				}
+				else if (A_registered_ptr2 != A_registered_ptr1) {
+					A_registered_ptr2 = A_registered_ptr1;
+					assert(A_registered_ptr2 == A_registered_ptr1);
+				}
+				else {
+					assert(false);
+				}
+
+				A a2 = a;
+				mse::TRegisteredObj<A> registered_a2 = registered_a;
+
+				a2 = A();
+				registered_a2 = mse::TRegisteredObj<A>();
+
+				A a3((A()));
+				mse::TRegisteredObj<A> registered_a3((A()));
+				{
+					mse::TRegisteredObj<A> registered_a4((mse::TRegisteredObj<A>()));
+				}
+
+				mse::TRegisteredConstPointer<A> rcp = A_registered_ptr1;
+				mse::TRegisteredConstPointer<A> rcp2 = rcp;
+				const mse::TRegisteredObj<A> cregistered_a;
+				rcp = &cregistered_a;
+				mse::TRegisteredFixedConstPointer<A> rfcp = &cregistered_a;
+				rcp = mse::registered_new<A>();
+				mse::registered_delete<A>(rcp);
+			}
+
+			bool expected_exception = false;
+#ifndef MSE_REGISTEREDPOINTER_DISABLED
+			try {
+				/* A_registered_ptr1 "knows" that the (registered) object it was pointing to has now been deallocated. */
+				int i = A_registered_ptr1->b; /* So this is gonna throw an exception */
+			}
+			catch (...) {
+				//std::cerr << "expected exception" << std::endl;
+				expected_exception = true;
+			}
+			assert(expected_exception);
+#endif // !MSE_REGISTEREDPOINTER_DISABLED
+
+			{
+				/* For heap allocations mse::registered_new is kind of analagous to std::make_shared, but again,
+			mse::TRegisteredPointers don't take ownership so you are responsible for deallocation. */
+				auto A_registered_ptr3 = mse::registered_new<A>();
+				assert(3 == A_registered_ptr3->b);
+				mse::registered_delete<A>(A_registered_ptr3);
+				bool expected_exception = false;
+#ifndef MSE_REGISTEREDPOINTER_DISABLED
+				try {
+					/* A_registered_ptr3 "knows" that the (registered) object it was pointing to has now been deallocated. */
+					int i = A_registered_ptr3->b; /* So this is gonna throw an exception */
+				}
+				catch (...) {
+					//std::cerr << "expected exception" << std::endl;
+					expected_exception = true;
+				}
+				assert(expected_exception);
+#endif // !MSE_REGISTEREDPOINTER_DISABLED
+			}
+
+			{
+				/* Remember that registered pointers can only point to registered objects. So, for example, if you want
+			a registered pointer to an object's base class object, that base class object has to be a registered
+			object. */
+				class DA : public mse::TRegisteredObj<A> {};
+				mse::TRegisteredObj<DA> registered_da;
+				mse::TRegisteredPointer<DA> DA_registered_ptr1 = &registered_da;
+				mse::TRegisteredPointer<A> A_registered_ptr4 = DA_registered_ptr1;
+				A_registered_ptr4 = &registered_da;
+				mse::TRegisteredFixedPointer<A> A_registered_fptr1 = &registered_da;
+				mse::TRegisteredFixedConstPointer<A> A_registered_fcptr1 = &registered_da;
+			}
+
+			{
+				/* Obtaining safe pointers to members of registered objects: */
+				class E {
+				public:
+					virtual ~E() {}
+					mse::TRegisteredObj<std::string> reg_s = "some text ";
+					std::string s2 = "some other text ";
+				};
+
+				mse::TRegisteredObj<E> registered_e;
+				mse::TRegisteredPointer<E> E_registered_ptr1 = &registered_e;
+
+				/* To obtain a safe pointer to a member of a registered object you could just make the
 			member itself a registered object. */
-			mse::TRegisteredPointer<std::string> reg_s_registered_ptr1 = &(E_registered_ptr1->reg_s);
+				mse::TRegisteredPointer<std::string> reg_s_registered_ptr1 = &(E_registered_ptr1->reg_s);
 
-			/* Or you can use the "mse::make_pointer_to_member()" function. */
-			auto s2_safe_ptr1 = mse::make_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
-			(*s2_safe_ptr1) = "some new text";
-			auto s2_safe_const_ptr1 = mse::make_const_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
+				/* Or you can use the "mse::make_pointer_to_member()" function. */
+				auto s2_safe_ptr1 = mse::make_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
+				(*s2_safe_ptr1) = "some new text";
+				auto s2_safe_const_ptr1 = mse::make_const_pointer_to_member(E_registered_ptr1->s2, E_registered_ptr1);
 
-			/* Just testing the convertibility of mse::TSyncWeakFixedPointers. */
-			auto E_registered_fixed_ptr1 = &registered_e;
-			auto swfptr1 = mse::make_syncweak<std::string>(E_registered_fixed_ptr1->s2, E_registered_fixed_ptr1);
-			mse::TSyncWeakFixedPointer<std::string, mse::TRegisteredPointer<E>> swfptr2 = swfptr1;
-			mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredFixedPointer<E>> swfcptr1 = swfptr1;
-			mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredPointer<E>> swfcptr2 = swfcptr1;
-			if (swfcptr1 == swfptr1) {
-				int q = 7;
+				/* Just testing the convertibility of mse::TSyncWeakFixedPointers. */
+				auto E_registered_fixed_ptr1 = &registered_e;
+				auto swfptr1 = mse::make_syncweak<std::string>(E_registered_fixed_ptr1->s2, E_registered_fixed_ptr1);
+				mse::TSyncWeakFixedPointer<std::string, mse::TRegisteredPointer<E>> swfptr2 = swfptr1;
+				mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredFixedPointer<E>> swfcptr1 = swfptr1;
+				mse::TSyncWeakFixedConstPointer<std::string, mse::TRegisteredPointer<E>> swfcptr2 = swfcptr1;
+				if (swfcptr1 == swfptr1) {
+					int q = 7;
+				}
+				if (swfptr1 == swfcptr1) {
+					int q = 7;
+				}
+				if (swfptr1) {
+					int q = 7;
+				}
 			}
-			if (swfptr1 == swfcptr1) {
-				int q = 7;
-			}
-			if (swfptr1) {
-				int q = 7;
-			}
-		}
+
 #endif // MSE_SELF_TESTS
-	}
+		}
+	};
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
 }
+
+#ifdef _MSC_VER
+#pragma warning( pop )  
+#endif /*_MSC_VER*/
 
 #endif // MSEREGISTERED_H_

@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
 	mse::msevector<double> cr0(8 * max_x, zdouble);
 
 	/* omp requires loop variables be signed ints. */
-	const int smax_x = max_x;
+	const int smax_x = int(max_x);
 #pragma omp parallel for
 	for (int sx = 0; sx < smax_x; ++sx)
 	{
@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	const int sheight = height;
+	const int sheight = int(height);
 #pragma omp parallel for schedule(guided)
 	for (int sy = 0; sy < sheight; ++sy)
 	{

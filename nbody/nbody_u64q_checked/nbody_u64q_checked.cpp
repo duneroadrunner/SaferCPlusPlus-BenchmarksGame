@@ -155,7 +155,9 @@ public:
 		}
 
 		for (mse::msear_size_t i = 0; i < N; i += 2) {
-			__m128d dx, dy, dz;
+			__m128d dx = __m128d();
+			__m128d dy = __m128d();
+			__m128d dz = __m128d();
 			dx = _mm_loadl_pd(dx, &r[i].dx);
 			dy = _mm_loadl_pd(dy, &r[i].dy);
 			dz = _mm_loadl_pd(dz, &r[i].dz);

@@ -92,15 +92,15 @@ void EvalPart(const sn_array_accessor_type& RESTRICT src, sn_span_type& RESTRICT
 			src[0] / double(Index<modei>(i + 0, 0)));
 
 		__m128d ti = modei ?
-			_mm_set_pd(i + 1, i + 0) :
-			_mm_set_pd(i + 2, i + 1);
+			_mm_set_pd(double(i + 1), double(i + 0)) :
+			_mm_set_pd(double(i + 2), double(i + 1));
 		__m128d last = _mm_set_pd(
 			Index<modei>(i + 1, 0),
 			Index<modei>(i + 0, 0));
 
 		for (mse::msear_size_t j = 1; j < src.size(); j++) {
 			//__m128d idx = last + ti + _mm_set1_pd(j);
-			__m128d idx = _mm_add_pd(last, _mm_add_pd(ti, _mm_set1_pd(j)));
+			__m128d idx = _mm_add_pd(last, _mm_add_pd(ti, _mm_set1_pd(double(j))));
 			last = idx;
 			//sum = sum + _mm_set1_pd(src[j]) / idx;
 			sum = _mm_add_pd(sum, _mm_div_pd(_mm_set1_pd(src[j]), idx));

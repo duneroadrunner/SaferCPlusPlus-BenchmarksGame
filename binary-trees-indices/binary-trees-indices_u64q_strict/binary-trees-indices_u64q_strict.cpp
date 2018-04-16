@@ -19,12 +19,14 @@ modified for Swift 3.0 by Daniel Muellenborn
 #include <algorithm>
 #include <vector>
 #include <string>
-#include <omp.h>
+//include <omp.h>
+#include <future>
 
 #include "mseprimitives.h"
 #define MSE_MSEVECTOR_USE_MSE_PRIMITIVES 1
 #include "msemstdvector.h"
 #include "msescope.h"
+#include "mseasyncshared.h"
 
 struct TreeNodeItem {
 	TreeNodeItem() {}
@@ -85,6 +87,24 @@ int GetThreadCount()
 #endif // _MSC_VER
 }
 
+auto foo1(mse::CInt depthIteration, const mse::CInt minDepth, const mse::CInt maxDepth) {
+	mse::TXScopeObj<mse::nii_vector<TreeNodeItem>> shortLivedPool;
+	auto depth = minDepth + depthIteration * 2;
+
+	auto iterations = 1 << (maxDepth - depth + minDepth);
+	mse::CInt check = 0;
+	for (auto i = 1; i <= iterations; i += 1) {
+		shortLivedPool.resize(0);
+		auto t1 = buildTree(&shortLivedPool, i, depth);
+		check += checkTree(&shortLivedPool, t1);
+		shortLivedPool.resize(0);
+		auto t2 = buildTree(&shortLivedPool, -i, depth);
+		check += checkTree(&shortLivedPool, t2);
+	}
+	//checksumOutput[depthIteration] = check;
+	return check;
+}
+
 int main(int argc, char *argv[])
 {
 	mse::CInt n = 10;
@@ -96,7 +116,7 @@ int main(int argc, char *argv[])
 	mse::CInt maxDepth = n;
 	mse::CInt stretchDepth = n + 1;
 
-	mse::TXScopeObj<mse::mstd::vector<TreeNodeItem>> longLivedPool;
+	mse::TXScopeObj<mse::nii_vector<TreeNodeItem>> longLivedPool;
 
 	auto longLivedTree = buildTree(&longLivedPool, 0, stretchDepth);
 
@@ -109,25 +129,17 @@ int main(int argc, char *argv[])
 
 	const auto numberOfIterations = (maxDepth - minDepth) / 2 + 1;
 
-	mse::mstd::vector<mse::CInt> checksumOutput(numberOfIterations);
+	mse::nii_vector<mse::CInt> checksumOutput(numberOfIterations);
 
-#pragma omp parallel for default(shared) num_threads(GetThreadCount()) schedule(dynamic, 1)
-	for (auto depthIteration = 0; depthIteration < int(numberOfIterations)/*omp requires this be an actual int*/; depthIteration += 1) {
-		mse::TXScopeObj<mse::mstd::vector<TreeNodeItem>> shortLivedPool;
-		auto depth = minDepth + depthIteration * 2;
-
-		auto iterations = 1 << (maxDepth - depth + minDepth);
-		auto check = 0;
-		for (auto i = 1; i <= iterations; i += 1) {
-			shortLivedPool.resize(0);
-			auto t1 = buildTree(&shortLivedPool, i, depth);
-			check += checkTree(&shortLivedPool, t1);
-			shortLivedPool.resize(0);
-			auto t2 = buildTree(&shortLivedPool, -i, depth);
-			check += checkTree(&shortLivedPool, t2);
-		}
-		checksumOutput[depthIteration] = check;
+	mse::mstd::vector<std::future<mse::CInt>> futures;
+	for (auto depthIteration = 0; depthIteration < numberOfIterations; depthIteration += 1) {
+		futures.emplace_back(mse::mstd::async(foo1, depthIteration, minDepth, maxDepth));
 	}
+	int depthIteration = 0;
+	for (auto it = futures.begin(); futures.end() != it; it++, depthIteration++) {
+		checksumOutput[depthIteration] = (*it).get();
+	}
+
 
 	const auto checksumOutput_size = checksumOutput.size();
 	for (mse::msev_size_t depthIteration = 0; depthIteration < checksumOutput_size; depthIteration += 1) {

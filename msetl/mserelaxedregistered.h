@@ -20,7 +20,8 @@ former purpose could be satisfied with a faster, safer, "header file only" set o
 #ifndef MSERELAXEDREGISTERED_H_
 #define MSERELAXEDREGISTERED_H_
 
-#include "mseprimitives.h"
+//include "mseprimitives.h"
+#include "msepointerbasics.h"
 #include <utility>
 #include <unordered_map>
 #include <mutex>
@@ -28,17 +29,22 @@ former purpose could be satisfied with a faster, safer, "header file only" set o
 //include <typeinfo>      // std::bad_cast
 #include <stdexcept>
 
+#if defined(_MSC_VER) && (defined(_WIN32) || defined(_WIN64)) 
+/* Jan 2016: For some reason std::this_thread::get_id() seems to be really slow in windows. So we're replacing it with the
+native GetCurrentThreadId(). */
+#define MSE_USE_WINDOWS_THREADID
+#endif /*_MSC_VER && (_WIN32 || _WIN64)*/
 
-#ifdef _MSC_VER
+#ifdef MSE_USE_WINDOWS_THREADID
 /* Jan 2016: For some reason std::this_thread::get_id() seems to be really slow in windows. So we're replacing it with the
 native GetCurrentThreadId(). */
 #define MSE_THREAD_ID_TYPE unsigned long /*DWORD*/
 #define MSE_GET_CURRENT_THREAD_ID CSPTrackerMap::mseWindowsGetCurrentThreadId()
-#else /*_MSC_VER*/
+#else /*MSE_USE_WINDOWS_THREADID*/
 #include <thread>         // std::thread, MSE_THREAD_ID_TYPE, MSE_GET_CURRENT_THREAD_ID
 #define MSE_THREAD_ID_TYPE std::thread::id
 #define MSE_GET_CURRENT_THREAD_ID std::this_thread::get_id()
-#endif /*_MSC_VER*/
+#endif /*MSE_USE_WINDOWS_THREADID*/
 
 #if defined(MSE_SAFER_SUBSTITUTES_DISABLED) || defined(MSE_SAFERPTR_DISABLED)
 #define MSE_REGISTEREDPOINTER_DISABLED
@@ -50,6 +56,10 @@ native GetCurrentThreadId(). */
 #else // MSE_CUSTOM_THROW_DEFINITION
 #define MSE_THROW(x) throw(x)
 #endif // MSE_CUSTOM_THROW_DEFINITION
+
+#ifndef _NOEXCEPT
+#define _NOEXCEPT
+#endif /*_NOEXCEPT*/
 
 namespace mse {
 
@@ -76,6 +86,9 @@ namespace mse {
 		delete a;
 	}
 
+	template<typename _Ty> auto relaxed_registered_fptr_to(_Ty&& _X) { return &_X; }
+	template<typename _Ty> auto relaxed_registered_fptr_to(const _Ty& _X) { return &_X; }
+
 #else /*MSE_REGISTEREDPOINTER_DISABLED*/
 
 	class relaxedregistered_cannot_verify_cast_error : public std::logic_error { public:
@@ -92,10 +105,16 @@ namespace mse {
 		bool unregisterPointer(const CSaferPtrBase& sp_ref, void *obj_ptr);
 		void onObjectDestruction(void *obj_ptr);
 		void onObjectConstruction(void *obj_ptr);
-		bool registerPointer(const CSaferPtrBase& sp_ref, const void *obj_ptr) { return (*this).registerPointer(sp_ref, (void *)obj_ptr); }
-		bool unregisterPointer(const CSaferPtrBase& sp_ref, const void *obj_ptr) { return (*this).unregisterPointer(sp_ref, (void *)obj_ptr); }
-		void onObjectDestruction(const void *obj_ptr) { (*this).onObjectDestruction((void *)obj_ptr); }
-		void onObjectConstruction(const void *obj_ptr) { (*this).onObjectConstruction((void *)obj_ptr); }
+		bool registerPointer(const CSaferPtrBase& sp_ref, const void *obj_ptr) { return (*this).registerPointer(sp_ref, const_cast<void *>(obj_ptr)); }
+		bool unregisterPointer(const CSaferPtrBase& sp_ref, const void *obj_ptr) { return (*this).unregisterPointer(sp_ref, const_cast<void *>(obj_ptr)); }
+		void onObjectDestruction(const void *obj_ptr) { (*this).onObjectDestruction(const_cast<void *>(obj_ptr)); }
+		void onObjectConstruction(const void *obj_ptr) { (*this).onObjectConstruction(const_cast<void *>(obj_ptr)); }
+		void reserve_space_for_one_more() {
+			/* The purpose of this function is to ensure that the next call to registerPointer() won't
+			need to allocate more memory, and thus won't have any chance of throwing an exception due to
+			memory allocation failure. */
+			m_obj_pointer_map.reserve(m_obj_pointer_map.size() + 1);
+		}
 
 		bool isEmpty() const { return ((0 == m_num_fs1_objects) && (0 == m_obj_pointer_map.size())); }
 
@@ -169,9 +188,9 @@ namespace mse {
 				}
 			}
 		}
-#ifdef _MSC_VER
+#ifdef MSE_USE_WINDOWS_THREADID
 		static MSE_THREAD_ID_TYPE mseWindowsGetCurrentThreadId();
-#endif /*_MSC_VER*/
+#endif /*MSE_USE_WINDOWS_THREADID*/
 
 
 		MSE_THREAD_ID_TYPE m_first_thread_id;
@@ -228,6 +247,7 @@ namespace mse {
 			(*m_sp_tracker_ptr).onObjectDestruction(this); /* Just in case there are pointers to this pointer out there. */
 		}
 		TRelaxedRegisteredPointer<_Ty>& operator=(_Ty* ptr) {
+			(*m_sp_tracker_ptr).reserve_space_for_one_more();
 			(*m_sp_tracker_ptr).unregisterPointer((*this), (*this).m_ptr);
 			TSaferPtrForLegacy<_Ty>::operator=(ptr);
 			(*m_sp_tracker_ptr).registerPointer((*this), ptr);
@@ -235,15 +255,18 @@ namespace mse {
 			return (*this);
 		}
 		TRelaxedRegisteredPointer<_Ty>& operator=(const TRelaxedRegisteredPointer<_Ty>& _Right_cref) {
+			(*m_sp_tracker_ptr).reserve_space_for_one_more();
 			(*m_sp_tracker_ptr).unregisterPointer((*this), (*this).m_ptr);
 			TSaferPtrForLegacy<_Ty>::operator=(_Right_cref);
 			//assert(m_sp_tracker_ptr == _Right_cref.m_sp_tracker_ptr);
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (m_sp_tracker_ptr != _Right_cref.m_sp_tracker_ptr) {
 				/* This indicates that the target object may have been created in a different thread than this pointer. If these
 				threads are asynchronous this can be unsafe. We'll allow it here because in many of these cases the threads are
 				not asynchoronous. Usually because (at least) one of the original threads is deceased. */
 				int q = 7;
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			(*m_sp_tracker_ptr).registerPointer((*this), _Right_cref);
 			m_might_not_point_to_a_TRelaxedRegisteredObj = _Right_cref.m_might_not_point_to_a_TRelaxedRegisteredObj;
 			return (*this);
@@ -255,9 +278,11 @@ namespace mse {
 		operator bool() const { return (*this).m_ptr; }
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		operator _Ty*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (nullptr == (*this).m_ptr) {
 				int q = 5; /* just a line of code for putting a debugger break point */
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			return (*this).m_ptr;
 		}
 		/*Ideally these "address of" operators shouldn't be used. If you want a pointer to a TRelaxedRegisteredPointer<_Ty>,
@@ -298,11 +323,13 @@ namespace mse {
 	private:
 		/* This function, if possible, should not be used. It is meant to be used exclusively by relaxed_registered_delete<>(). */
 		TRelaxedRegisteredObj<_Ty>* asANativePointerToTRelaxedRegisteredObj() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (nullptr == (*this).m_ptr) {
 				int q = 5; /* just a line of code for putting a debugger break point */
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			if (m_might_not_point_to_a_TRelaxedRegisteredObj) { MSE_THROW(relaxedregistered_cannot_verify_cast_error("cannot verify cast validity - mse::TRelaxedRegisteredPointer")); }
-			return (TRelaxedRegisteredObj<_Ty>*)((*this).m_ptr);
+			return static_cast<TRelaxedRegisteredObj<_Ty>*>((*this).m_ptr);
 		}
 
 		CSPTracker* m_sp_tracker_ptr = nullptr;
@@ -360,6 +387,7 @@ namespace mse {
 			(*m_sp_tracker_ptr).onObjectDestruction(this); /* Just in case there are pointers to this pointer out there. */
 		}
 		TRelaxedRegisteredConstPointer<_Ty>& operator=(const _Ty* ptr) {
+			(*m_sp_tracker_ptr).reserve_space_for_one_more();
 			(*m_sp_tracker_ptr).unregisterPointer((*this), (*this).m_ptr);
 			TSaferPtrForLegacy<const _Ty>::operator=(ptr);
 			(*m_sp_tracker_ptr).registerPointer((*this), ptr);
@@ -367,15 +395,18 @@ namespace mse {
 			return (*this);
 		}
 		TRelaxedRegisteredConstPointer<_Ty>& operator=(const TRelaxedRegisteredConstPointer<_Ty>& _Right_cref) {
+			(*m_sp_tracker_ptr).reserve_space_for_one_more();
 			(*m_sp_tracker_ptr).unregisterPointer((*this), (*this).m_ptr);
 			TSaferPtrForLegacy<const _Ty>::operator=(_Right_cref);
 			//assert(m_sp_tracker_ptr == _Right_cref.m_sp_tracker_ptr);
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (m_sp_tracker_ptr != _Right_cref.m_sp_tracker_ptr) {
 				/* This indicates that the target object may have been created in a different thread than this pointer. If these
 				threads are asynchronous this can be unsafe. We'll allow it here because in many of these cases the threads are
 				not asynchoronous. Usually because (at least) one of the original threads is deceased. */
 				int q = 7;
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			(*m_sp_tracker_ptr).registerPointer((*this), _Right_cref);
 			m_might_not_point_to_a_TRelaxedRegisteredObj = _Right_cref.m_might_not_point_to_a_TRelaxedRegisteredObj;
 			return (*this);
@@ -394,9 +425,11 @@ namespace mse {
 		operator bool() const { return (*this).m_ptr; }
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		operator const _Ty*() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (nullptr == (*this).m_ptr) {
 				int q = 5; /* just a line of code for putting a debugger break point */
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			return (*this).m_ptr;
 		}
 		/*Ideally these "address of" operators shouldn't be used. If you want a pointer to a TRelaxedRegisteredConstPointer<_Ty>,
@@ -437,11 +470,13 @@ namespace mse {
 	private:
 		/* This function, if possible, should not be used. It is meant to be used exclusively by relaxed_registered_delete<>(). */
 		const TRelaxedRegisteredObj<_Ty>* asANativePointerToTRelaxedRegisteredObj() const {
+#ifdef NATIVE_PTR_DEBUG_HELPER1
 			if (nullptr == (*this).m_ptr) {
 				int q = 5; /* just a line of code for putting a debugger break point */
 			}
+#endif /*NATIVE_PTR_DEBUG_HELPER1*/
 			if (m_might_not_point_to_a_TRelaxedRegisteredObj) { MSE_THROW(relaxedregistered_cannot_verify_cast_error("cannot verify cast validity - mse::TRelaxedRegisteredConstPointer")); }
-			return (const TRelaxedRegisteredObj<_Ty>*)((*this).m_ptr);
+			return static_cast<const TRelaxedRegisteredObj<_Ty>*>((*this).m_ptr);
 		}
 
 		CSPTracker* m_sp_tracker_ptr = nullptr;
@@ -457,6 +492,15 @@ namespace mse {
 		TRelaxedRegisteredNotNullPointer(const TRelaxedRegisteredNotNullPointer& src_cref) : TRelaxedRegisteredPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TRelaxedRegisteredNotNullPointer(const TRelaxedRegisteredNotNullPointer<_Ty2>& src_cref) : TRelaxedRegisteredPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredNotNullPointer(const  TRelaxedRegisteredPointer<_Ty>& src_cref) : TRelaxedRegisteredPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredNotNullPointer(const TRelaxedRegisteredPointer<_Ty2>& src_cref) : TRelaxedRegisteredPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+
 		virtual ~TRelaxedRegisteredNotNullPointer() {}
 		/*
 		TRelaxedRegisteredNotNullPointer<_Ty>& operator=(const TRelaxedRegisteredNotNullPointer<_Ty>& _Right_cref) {
@@ -496,6 +540,22 @@ namespace mse {
 		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredNotNullConstPointer<_Ty>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredNotNullConstPointer<_Ty2>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredPointer<_Ty>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredPointer<_Ty2>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredConstPointer<_Ty>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredNotNullConstPointer(const TRelaxedRegisteredConstPointer<_Ty2>& src_cref) : TRelaxedRegisteredConstPointer<_Ty>(src_cref) {
+			*src_cref; // to ensure that src_cref points to a valid target
+		}
+
 		virtual ~TRelaxedRegisteredNotNullConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return TRelaxedRegisteredConstPointer<_Ty>::operator const _Ty*(); }
@@ -518,7 +578,17 @@ namespace mse {
 		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredFixedPointer& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredFixedPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredNotNullPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredNotNullPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedPointer(const TRelaxedRegisteredPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullPointer<_Ty>(src_cref) {}
+
 		virtual ~TRelaxedRegisteredFixedPointer() {}
+
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator _Ty*() const { return TRelaxedRegisteredNotNullPointer<_Ty>::operator _Ty*(); }
 		explicit operator TRelaxedRegisteredObj<_Ty>*() const { return TRelaxedRegisteredNotNullPointer<_Ty>::operator TRelaxedRegisteredObj<_Ty>*(); }
@@ -552,6 +622,21 @@ namespace mse {
 		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredFixedConstPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredFixedConstPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredNotNullPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredNotNullPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredNotNullConstPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredNotNullConstPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredConstPointer<_Ty>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		TRelaxedRegisteredFixedConstPointer(const TRelaxedRegisteredConstPointer<_Ty2>& src_cref) : TRelaxedRegisteredNotNullConstPointer<_Ty>(src_cref) {}
+
 		virtual ~TRelaxedRegisteredFixedConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return TRelaxedRegisteredNotNullConstPointer<_Ty>::operator const _Ty*(); }
@@ -585,21 +670,22 @@ namespace mse {
 	destruction so that TRelaxedRegisteredPointers will avoid referencing destroyed objects. Note that TRelaxedRegisteredObj can be used with
 	objects allocated on the stack. */
 	template<typename _TROFLy>
-	class TRelaxedRegisteredObj : public _TROFLy {
+	class TRelaxedRegisteredObj : public _TROFLy
+		, public std::conditional<!std::is_convertible<_TROFLy*, NotAsyncShareableTagBase*>::value, NotAsyncShareableTagBase, TPlaceHolder_msepointerbasics<TRelaxedRegisteredObj<_TROFLy> > >::type
+	{
 	public:
 		MSE_USING(TRelaxedRegisteredObj, _TROFLy);
 		TRelaxedRegisteredObj(const TRelaxedRegisteredObj& _X) : _TROFLy(_X) {}
-		TRelaxedRegisteredObj(TRelaxedRegisteredObj&& _X) : _TROFLy(std::move(_X)) {}
+		TRelaxedRegisteredObj(TRelaxedRegisteredObj&& _X) : _TROFLy(std::forward<decltype(_X)>(_X)) {}
 		virtual ~TRelaxedRegisteredObj() {
 			//gSPTrackerMap.SPTrackerRef(MSE_GET_CURRENT_THREAD_ID).onObjectDestruction(this);
 		}
-		using _TROFLy::operator=;
-		//TRelaxedRegisteredObj& operator=(TRelaxedRegisteredObj&& _X) { _TROFLy::operator=(std::move(_X)); return (*this); }
-		TRelaxedRegisteredObj& operator=(typename std::conditional<std::is_const<_TROFLy>::value
-			, std::nullptr_t, TRelaxedRegisteredObj>::type&& _X) { _TROFLy::operator=(std::move(_X)); return (*this); }
-		//TRelaxedRegisteredObj& operator=(const TRelaxedRegisteredObj& _X) { _TROFLy::operator=(_X); return (*this); }
-		TRelaxedRegisteredObj& operator=(const typename std::conditional<std::is_const<_TROFLy>::value
-			, std::nullptr_t, TRelaxedRegisteredObj>::type& _X) { _TROFLy::operator=(_X); return (*this); }
+
+		template<class _Ty2>
+		TRelaxedRegisteredObj& operator=(_Ty2&& _X) { _TROFLy::operator=(std::forward<decltype(_X)>(_X)); return (*this); }
+		template<class _Ty2>
+		TRelaxedRegisteredObj& operator=(const _Ty2& _X) { _TROFLy::operator=(_X); return (*this); }
+
 		TRelaxedRegisteredFixedPointer<_TROFLy> operator&() {
 			return TRelaxedRegisteredFixedPointer<_TROFLy>(this);
 			//return this;
@@ -608,10 +694,23 @@ namespace mse {
 			return TRelaxedRegisteredFixedConstPointer<_TROFLy>(this);
 			//return this;
 		}
+		TRelaxedRegisteredFixedPointer<_TROFLy> mse_relaxed_registered_fptr() { return TRelaxedRegisteredFixedPointer<_TROFLy>(this); }
+		TRelaxedRegisteredFixedConstPointer<_TROFLy> mse_relaxed_registered_fptr() const { return TRelaxedRegisteredFixedConstPointer<_TROFLy>(this); }
+
 		CSPTracker* trackerPtr() const { return m_tracker_notifier.trackerPtr(); }
 
+	private:
 		CTrackerNotifier m_tracker_notifier;
 	};
+
+	template<typename _Ty>
+	auto relaxed_registered_fptr_to(_Ty&& _X) {
+		return _X.mse_relaxed_registered_fptr();
+	}
+	template<typename _Ty>
+	auto relaxed_registered_fptr_to(const _Ty& _X) {
+		return _X.mse_relaxed_registered_fptr();
+	}
 
 	/* See registered_new(). */
 	template <class _Ty, class... Args>
@@ -627,6 +726,86 @@ namespace mse {
 	void relaxed_registered_delete(const TRelaxedRegisteredConstPointer<_Ty>& regPtrRef) {
 		regPtrRef.relaxed_registered_delete();
 	}
+}
+
+namespace std {
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredNotNullPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredNotNullPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredNotNullPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredFixedPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredFixedPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredFixedPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredNotNullConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredNotNullConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredNotNullConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+	template<class _Ty>
+	struct hash<mse::TRelaxedRegisteredFixedConstPointer<_Ty> > {	// hash functor
+		typedef mse::TRelaxedRegisteredFixedConstPointer<_Ty> argument_type;
+		typedef size_t result_type;
+		size_t operator()(const mse::TRelaxedRegisteredFixedConstPointer<_Ty>& _Keyval) const _NOEXCEPT {
+			const _Ty* ptr1 = nullptr;
+			if (_Keyval) {
+				ptr1 = std::addressof(*_Keyval);
+			}
+			return (hash<const _Ty *>()(ptr1));
+		}
+	};
+}
+
+namespace mse {
+
 #endif /*MSE_REGISTEREDPOINTER_DISABLED*/
 
 #if defined(MSE_REGISTEREDPOINTER_DISABLED)
@@ -658,60 +837,96 @@ namespace mse {
 	void rrdelete(const TRelaxedRegisteredPointer<_Ty>& regPtrRef) { relaxed_registered_delete<_Ty>(regPtrRef); }
 
 
-	static void s_relaxedregptr_test1() {
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4189 )
+#endif /*_MSC_VER*/
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
+	class CRelaxedRegPtrTest1 {
+	public:
+		static void s_test1() {
 #ifdef MSE_SELF_TESTS
-		class C;
+			class C;
 
-		class D {
-		public:
-			virtual ~D() {}
-			mse::TRelaxedRegisteredPointer<C> m_c_ptr = nullptr;
-		};
+			class D {
+			public:
+				virtual ~D() {}
+				mse::TRelaxedRegisteredPointer<C> m_c_ptr = nullptr;
+			};
 
-		class C {
-		public:
-			mse::TRelaxedRegisteredPointer<D> m_d_ptr = nullptr;
-		};
+			class C {
+			public:
+				C() {}
+				mse::TRelaxedRegisteredPointer<D> m_d_ptr = nullptr;
+			};
 
-		mse::TRelaxedRegisteredObj<C> regobjfl_c;
-		mse::TRelaxedRegisteredPointer<D> d_ptr = mse::relaxed_registered_new<D>();
+			mse::TRelaxedRegisteredObj<C> regobjfl_c;
+			mse::TRelaxedRegisteredPointer<D> d_ptr = mse::relaxed_registered_new<D>();
 
-		regobjfl_c.m_d_ptr = d_ptr;
-		d_ptr->m_c_ptr = &regobjfl_c;
+			regobjfl_c.m_d_ptr = d_ptr;
+			d_ptr->m_c_ptr = &regobjfl_c;
 
-		mse::TRelaxedRegisteredConstPointer<C> rrcp = d_ptr->m_c_ptr;
-		mse::TRelaxedRegisteredConstPointer<C> rrcp2 = rrcp;
-		const mse::TRelaxedRegisteredObj<C> regobjfl_e;
-		rrcp = &regobjfl_e;
-		mse::TRelaxedRegisteredFixedConstPointer<C> rrfcp = &regobjfl_e;
-		rrcp = mse::relaxed_registered_new<C>();
-		mse::relaxed_registered_delete<C>(rrcp);
+			mse::TRelaxedRegisteredConstPointer<C> rrcp = d_ptr->m_c_ptr;
+			mse::TRelaxedRegisteredConstPointer<C> rrcp2 = rrcp;
+			const mse::TRelaxedRegisteredObj<C> regobjfl_e;
+			rrcp = &regobjfl_e;
+			mse::TRelaxedRegisteredFixedConstPointer<C> rrfcp = &regobjfl_e;
+			rrcp = mse::relaxed_registered_new<C>();
+			mse::relaxed_registered_delete<C>(rrcp);
 
-		mse::relaxed_registered_delete<D>(d_ptr);
+			mse::relaxed_registered_delete<D>(d_ptr);
 
-		{
-			/* Polymorphic conversions. */
-			class FD : public mse::TRelaxedRegisteredObj<D> {};
-			mse::TRelaxedRegisteredObj<FD> relaxedregistered_fd;
-			mse::TRelaxedRegisteredPointer<FD> FD_relaxedregistered_ptr1 = &relaxedregistered_fd;
-			mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr4 = FD_relaxedregistered_ptr1;
-			D_relaxedregistered_ptr4 = &relaxedregistered_fd;
-			mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr1 = &relaxedregistered_fd;
-			mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr1 = &relaxedregistered_fd;
+			{
+				/* Polymorphic conversions. */
+				class FD : public mse::TRelaxedRegisteredObj<D> {};
+				mse::TRelaxedRegisteredObj<FD> relaxedregistered_fd;
+				mse::TRelaxedRegisteredPointer<FD> FD_relaxedregistered_ptr1 = &relaxedregistered_fd;
+				mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr4 = FD_relaxedregistered_ptr1;
+				D_relaxedregistered_ptr4 = &relaxedregistered_fd;
+				mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr1 = &relaxedregistered_fd;
+				mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr1 = &relaxedregistered_fd;
 
-			/* Polymorphic conversions that would not be supported by mse::TRegisteredPointer. */
-			class GD : public D {};
-			mse::TRelaxedRegisteredObj<GD> relaxedregistered_gd;
-			mse::TRelaxedRegisteredPointer<GD> GD_relaxedregistered_ptr1 = &relaxedregistered_gd;
-			mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
-			D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
-			mse::TRelaxedRegisteredFixedPointer<GD> GD_relaxedregistered_fptr1 = &relaxedregistered_gd;
-			D_relaxedregistered_ptr5 = &relaxedregistered_gd;
-			mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr2 = &relaxedregistered_gd;
-			mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr2 = &relaxedregistered_gd;
-		}
+				/* Polymorphic conversions that would not be supported by mse::TRegisteredPointer. */
+				class GD : public D {};
+				mse::TRelaxedRegisteredObj<GD> relaxedregistered_gd;
+				mse::TRelaxedRegisteredPointer<GD> GD_relaxedregistered_ptr1 = &relaxedregistered_gd;
+				mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
+				D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
+				mse::TRelaxedRegisteredFixedPointer<GD> GD_relaxedregistered_fptr1 = &relaxedregistered_gd;
+				D_relaxedregistered_ptr5 = &relaxedregistered_gd;
+				mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr2 = &relaxedregistered_gd;
+				mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr2 = &relaxedregistered_gd;
+			}
+
 #endif // MSE_SELF_TESTS
-	}
+		}
+	};
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
+#ifdef _MSC_VER
+#pragma warning( pop )  
+#endif /*_MSC_VER*/
+
 }
 
 #undef MSE_THROW

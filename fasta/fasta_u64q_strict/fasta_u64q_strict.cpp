@@ -20,26 +20,31 @@ compiles with gcc fasta.cpp -std=c++11 -O2
 #include <iostream>
 #include <numeric>
 
-/* performance tuning parameter */
-#define MSE_REGISTERED_DEFAULT_CACHE_SIZE 6
-//define MSE_REGISTERED_INSTRUMENTATION1
 #define MSE_MSEARRAY_USE_MSE_PRIMITIVES
 #define MSE_MSEVECTOR_USE_MSE_PRIMITIVES
 
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4503 )
+#endif /*_MSC_VER*/
+
 #include <string>
 #include <limits>
+#include "mseprimitives.h"
 #include "msemstdarray.h"
 #include "msemstdvector.h"
 #include "mseasyncshared.h"
 #include "msescope.h"
+#include "msepoly.h"
 
 struct IUB
 {
 	float p;
 	char c;
 };
+typedef mse::us::TUserDeclaredAsyncShareableObj<IUB> ShareableIUB;
 
-const std::string alu =
+const mse::TXScopeObj<mse::nii_string> alu0 =
 {
 	"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
 	"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
@@ -50,13 +55,8 @@ const std::string alu =
 	"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 };
 
-/* "Strict SaferCPlusPlus" generally prefers the "lifespan aware" mse::mstd::array<> over mse::msearray<>,
-but "lifespan safety" (i.e. premature deallocation) is not an issue for objects declared at global scope.
-Furthermore, these arrays will be shared (as read-only) among asynchronous threads. In general,
-mse::mstd::array<> should not be shared between asynchronous threads as its iterator tracking mechanism
-is not thread safe. */
-mse::msearray<IUB, 15> iub =
-{ { {
+mse::TXScopeObj<mse::nii_array<IUB, 15> > iub0 = mse::nii_array<IUB, 15>
+{ {
 	{ 0.27f, 'a' },
 	{ 0.12f, 'c' },
 	{ 0.12f, 'g' },
@@ -72,15 +72,49 @@ mse::msearray<IUB, 15> iub =
 	{ 0.02f, 'V' },
 	{ 0.02f, 'W' },
 	{ 0.02f, 'Y' }
-	} } };
+	} };
 
-mse::msearray<IUB, 4> homosapiens =
-{ { {
+mse::TXScopeObj<mse::nii_array<IUB, 4> > homosapiens0 = mse::nii_array<IUB, 4>
+{ {
 	{ 0.3029549426680f, 'a' },
 	{ 0.1979883004921f, 'c' },
 	{ 0.1975473066391f, 'g' },
 	{ 0.3015094502008f, 't' }
-	} } };
+	} };
+
+template<class iterator_type>
+void make_cumulative(iterator_type first, iterator_type last)
+{
+	std::partial_sum(first, last, first,
+		[](IUB l, IUB r) -> IUB { r.p += l.p; return r; });
+}
+
+template <class _Ty, size_t _Size>
+constexpr size_t size_of_nii_array(const mse::nii_array<_Ty, _Size>&) {
+	return _Size;
+}
+template<size_t _Size, class _TArrayPointer>
+auto make_nii_array_of_shareable_uibs(_TArrayPointer array_ptr) {
+	mse::nii_array<ShareableIUB, _Size> retval;
+	for (size_t i = 0; i < _Size; i += 1) {
+		retval[i] = (*array_ptr)[i];
+	}
+	return retval;
+}
+template <size_t _Size, class _TIUBArrayPtr>
+auto initialize_shareable_iub(_TIUBArrayPtr iub_array_ptr) {
+	auto xscope_begin_iter = mse::make_xscope_iterator(iub_array_ptr);
+	auto xscope_end_iter = xscope_begin_iter + (*iub_array_ptr).size();
+	make_cumulative(xscope_begin_iter, xscope_end_iter);
+	return mse::make_asyncsharedv2immutable<decltype(make_nii_array_of_shareable_uibs<_Size>(iub_array_ptr))>(make_nii_array_of_shareable_uibs<_Size>(iub_array_ptr));
+}
+
+/* The original (unsafe) version did some initial processing on the "iub" and "homosapiens" arrays, then proceeded to directly
+access these (non-const) global arrays from multiple different threads. The alternative (safe) approach we use here is to make
+an immutable (shareable) copy of the processed array that can be safely accessed from multiple threads. */
+auto g_iub_shimptr = initialize_shareable_iub<15>(&iub0);
+auto g_homosapiens_shimptr = initialize_shareable_iub<4>(&homosapiens0);
+auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(alu0);
 
 const int IM = 139968;
 const float IM_RECIPROCAL = 1.0f / IM;
@@ -125,13 +159,9 @@ public:
 		return *p;
 	}
 private:
-	/* In general, storing iterators to arrays shared between asynchronous threads is not really kosher
-	SaferCPlusPlus. Storing indices would be better. But for now we'll leave it as is in order to leave
-	the code more recognizable when comparing with the "unchecked" implementation. The change wouldn't
-	affect performance anyway (as the safe iterators are implemented with indices). */
-	iterator_type first;
-	iterator_type current;
-	iterator_type last;
+	mse::TMemberObj<iterator_type> first;
+	mse::TMemberObj<iterator_type> current;
+	mse::TMemberObj<iterator_type> last;
 };
 template<class iterator_type>
 repeat_generator_type<iterator_type>
@@ -150,12 +180,24 @@ char convert_random(uint32_t random, iterator_type begin, iterator_type end)
 
 char convert_IUB(uint32_t random)
 {
-	return convert_random(random, iub.cbegin(), iub.cend());
+	//return convert_random(random, g_iub_shimptr->ss_cbegin(g_iub_shimptr), g_iub_shimptr->ss_cend(g_iub_shimptr));
+	/* In theory, (safe) iterators based on a "shared immutable" pointer like g_iub_shimptr should be just as fast as
+	iterators based on scope pointers as neither needs to check their dereferences for nullptr. But the (msvc2017)
+	optimizer seems to prefer the latter. */
+	auto xscope_store = mse::make_xscope_strong_pointer_store(g_iub_shimptr);
+	auto iub_xscpptr = xscope_store.xscope_ptr();
+	auto xscope_cbegin = mse::make_xscope_const_iterator(iub_xscpptr);
+	auto xscope_cend = xscope_cbegin + iub_xscpptr->size();
+	return convert_random(random, xscope_cbegin, xscope_cend);
 }
 
 char convert_homosapiens(uint32_t random)
 {
-	return convert_random(random, homosapiens.cbegin(), homosapiens.cend());
+	auto xscope_store = mse::make_xscope_strong_pointer_store(g_homosapiens_shimptr);
+	auto homosapiens_xscpptr = xscope_store.xscope_ptr();
+	auto xscope_cbegin = mse::make_xscope_const_iterator(homosapiens_xscpptr);
+	auto xscope_cend = xscope_cbegin + homosapiens_xscpptr->size();
+	return convert_random(random, xscope_cbegin, xscope_cend);
 }
 
 template<class iterator_type>
@@ -164,7 +206,7 @@ public:
 	using result_t = uint32_t;
 
 	random_generator_type(iterator_type first, iterator_type last)
-		: first(first), last(last)
+		//: first(first), last(last)
 	{ }
 	template<class gen_random_state_pointer_type>
 	result_t generate_random(gen_random_state_pointer_type state_ptr)
@@ -172,21 +214,14 @@ public:
 		return gen_random(state_ptr);
 	}
 private:
-	iterator_type first;
-	iterator_type last;
+	//mse::TMemberObj<iterator_type> first;
+	//mse::TMemberObj<iterator_type> last;
 };
 template<class iterator_type>
 random_generator_type<iterator_type>
 make_random_generator(iterator_type first, iterator_type last)
 {
 	return random_generator_type<iterator_type>(first, last);
-}
-
-template<class iterator_type>
-void make_cumulative(iterator_type first, iterator_type last)
-{
-	std::partial_sum(first, last, first,
-		[](IUB l, IUB r) -> IUB { r.p += l.p; return r; });
 }
 
 /* size_t is generally frowned upon due to it's problematic interaction with signed integers, but these
@@ -236,12 +271,12 @@ mse::msear_size_t fillBlock(mse::msear_size_t currentThread, iterator_type begin
 			const mse::msear_size_t valuesToGenerate = std::min(fill_state.m_totalValuesToGenerate, mse::msear_size_t(VALUES_PER_BLOCK));
 			fill_state.m_totalValuesToGenerate -= valuesToGenerate;
 
-			/* gen_random_state_xswfptr is a "safe" weak pointer to a member of an object declared on the stack. */
-			auto gen_random_state_xswfptr = mse::make_xscopeweak(fill_state.m_gen_random_state, &fill_state);
+			/* Obtaining a scope pointer to fill_state.m_gen_random_state. */
+			auto gen_random_state_xscpptr = mse::make_xscope_pointer_to_member_v2(&fill_state, &fill_state_type::m_gen_random_state);
 
 			for (mse::msear_size_t valuesRemaining = 0; valuesRemaining < valuesToGenerate; ++valuesRemaining)
 			{
-				*begin = generator_ptr->generate_random(gen_random_state_xswfptr);
+				*begin = generator_ptr->generate_random(gen_random_state_xscpptr);
 				++begin;
 				//*begin++ = generator();
 			}
@@ -287,10 +322,11 @@ struct out_state_type
 {
 	mse::msear_size_t m_outThreadIndex = 0/*std::numeric_limits<mse::msear_size_t>::max()*/;
 };
-auto g_out_state_access_requester = mse::make_asyncsharedobjectthatyouaresurehasnounprotectedmutablesreadwrite<out_state_type>();
+typedef mse::us::TUserDeclaredAsyncShareableObj<out_state_type> shareable_out_state_type;
+auto g_out_state_access_requester = mse::make_asyncsharedv2readwrite<shareable_out_state_type>();
 
-template<class char_array_type>
-void writeCharacters(mse::msear_size_t currentThread, const char_array_type& char_array, mse::msear_size_t  count)
+template<class char_array_pointer_type>
+void writeCharacters(mse::msear_size_t currentThread, char_array_pointer_type char_array_pointer, mse::msear_size_t count)
 {
 	while (true)
 	{
@@ -309,28 +345,31 @@ void writeCharacters(mse::msear_size_t currentThread, const char_array_type& cha
 			*out_state_writelock_ptr = out_state;
 
 			// Do the work.
-			if (count > char_array.size()) { std::cerr << "fatal error\n"; std::terminate(); }
-			auto it = char_array.cbegin();
+			if (count > (*char_array_pointer).size()) { std::cerr << "fatal error\n"; std::terminate(); }
+			auto it = (*char_array_pointer).cbegin();
 			for (mse::msear_size_t i = 0; i < count; i += 1) {
 				std::cout.put(*it);
 				++it;
 			}
-			//std::fwrite(char_array.data(), count, 1, stdout);
+			//std::fwrite((*char_array_pointer).data(), count, 1, stdout);
 			return;
 		}
 	}
 }
 
-
-template<class generator_type, class generator_pointer_type, class converter_type>
-void work(mse::msear_size_t currentThread, const generator_type&, generator_pointer_type generator_ptr, converter_type& converter)
+template<class generator_make_function_type, class converter_type>
+void work(mse::msear_size_t currentThread, generator_make_function_type generator_make_function, converter_type converter)
 {
+	typedef decltype(generator_make_function()) generator_type;
+	mse::TXScopeObj<generator_type> generator = generator_make_function();
+	auto generator_xscpptr = &generator;
+
 	mse::mstd::array< typename generator_type::result_t, VALUES_PER_BLOCK > block;
-	mse::mstd::array< char, CHARS_PER_BLOCK_INCL_NEWLINES > characters;
+	mse::TXScopeObj<mse::mstd::array< char, CHARS_PER_BLOCK_INCL_NEWLINES > > characters;
 
 	while (true)
 	{
-		const auto bytesGenerated = fillBlock(currentThread, block.begin(), generator_ptr);
+		const auto bytesGenerated = fillBlock(currentThread, block.begin(), generator_xscpptr);
 
 		if (bytesGenerated == 0)
 		{
@@ -339,12 +378,12 @@ void work(mse::msear_size_t currentThread, const generator_type&, generator_poin
 
 		const auto charactersGenerated = convertBlock(block.begin(), block.begin() + bytesGenerated, characters.begin(), converter);
 
-		writeCharacters(currentThread, characters, charactersGenerated);
+		writeCharacters(currentThread, &characters, charactersGenerated);
 	}
 }
 
-template <class generator_type, class generator_pointer_type, class converter_type >
-void make(const std::string&/*const char* */desc, int n, const generator_type&, generator_pointer_type generator_ptr, converter_type converter) {
+template<class generator_make_function_type, class converter_type>
+void make(const mse::nii_string/*const char* */desc, mse::CInt n, generator_make_function_type generator_make_function, converter_type converter) {
 	std::cout << '>' << desc << '\n';
 
 	{
@@ -357,18 +396,28 @@ void make(const std::string&/*const char* */desc, int n, const generator_type&, 
 
 	g_out_state_access_requester.writelock_ptr()->m_outThreadIndex = 0/*std::numeric_limits<mse::msear_size_t>::max()*/;
 
-	mse::mstd::vector< std::thread > threads(THREADS_TO_USE - 1);
+	mse::mstd::vector< mse::mstd::thread > threads(THREADS_TO_USE - 1);
 	for (mse::msear_size_t i = 0; i < threads.size(); ++i)
 	{
-		threads[i] = std::thread{ std::bind(&work< generator_type, generator_pointer_type, converter_type >, i, std::ref(*generator_ptr), generator_ptr, std::ref(converter)) };
+		threads[i] = mse::mstd::thread(work< generator_make_function_type, converter_type >, mse::as_a_size_t(i), generator_make_function, converter);
 	}
 
-	work(threads.size(), *generator_ptr, generator_ptr, converter);
+	work(threads.size(), generator_make_function, converter);
 
 	for (auto& thread : threads)
 	{
 		thread.join();
 	}
+}
+
+auto make_alu_repeat_generator() {
+	return make_repeat_generator(g_alu_shimptr->ss_cbegin(g_alu_shimptr), g_alu_shimptr->ss_cend(g_alu_shimptr));
+}
+auto make_iub_random_generator() {
+	return make_random_generator(g_iub_shimptr->ss_cbegin(g_iub_shimptr), g_iub_shimptr->ss_cend(g_iub_shimptr));
+}
+auto make_homosapiens_random_generator() {
+	return make_random_generator(g_homosapiens_shimptr->ss_cbegin(g_homosapiens_shimptr), g_homosapiens_shimptr->ss_cend(g_homosapiens_shimptr));
 }
 
 int main(int argc, char *argv[])
@@ -379,26 +428,27 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	make_cumulative(iub.begin(), iub.end());
-	make_cumulative(homosapiens.begin(), homosapiens.end());
+	//make_cumulative(iub.begin(), iub.end());
+	//make_cumulative(homosapiens.begin(), homosapiens.end());
 
 	{
-		mse::TXScopeObj<repeat_generator_type<std::string::const_iterator>> repeat_generator1 = make_repeat_generator(alu.begin(), alu.end());
 		make("ONE Homo sapiens alu", n * 2,
-			repeat_generator1, &repeat_generator1,
-			&convert_trivial);
+			make_alu_repeat_generator,
+			convert_trivial);
 	}
 	{
-		mse::TXScopeObj<random_generator_type<mse::msearray<IUB, 15>::const_iterator>> random_generator1 = make_random_generator(iub.cbegin(), iub.cend());
 		make("TWO IUB ambiguity codes", n * 3,
-			random_generator1, &random_generator1,
-			&convert_IUB);
+			make_iub_random_generator,
+			convert_IUB);
 	}
 	{
-		mse::TXScopeObj<random_generator_type<mse::msearray<IUB, 4>::const_iterator>> random_generator2 = make_random_generator(homosapiens.cbegin(), homosapiens.cend());
 		make("THREE Homo sapiens frequency", n * 5,
-			random_generator2, &random_generator2,
-			&convert_homosapiens);
+			make_homosapiens_random_generator,
+			convert_homosapiens);
 	}
 	return 0;
 }
+
+#ifdef _MSC_VER
+#pragma warning( pop )  
+#endif /*_MSC_VER*/

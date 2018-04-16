@@ -44,7 +44,7 @@ const std::string alu =
 };
 
 mse::msearray<IUB, 15> iub =
-{ { {
+{ {
 	{ 0.27f, 'a' },
 	{ 0.12f, 'c' },
 	{ 0.12f, 'g' },
@@ -60,15 +60,15 @@ mse::msearray<IUB, 15> iub =
 	{ 0.02f, 'V' },
 	{ 0.02f, 'W' },
 	{ 0.02f, 'Y' }
-	} } };
+	} };
 
 mse::msearray<IUB, 4> homosapiens =
-{ { {
+{ {
 	{ 0.3029549426680f, 'a' },
 	{ 0.1979883004921f, 'c' },
 	{ 0.1975473066391f, 'g' },
 	{ 0.3015094502008f, 't' }
-	} } };
+	} };
 
 const int IM = 139968;
 const float IM_RECIPROCAL = 1.0f / IM;
