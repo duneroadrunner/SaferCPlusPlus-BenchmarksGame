@@ -120,11 +120,9 @@ int main(int argc, char* argv[])
 	const double limit_sq = limit * limit;
 
 	const Byte zbyte = 0;
-	//mse::mstd::vector<Byte> buffer(height * max_x, zbyte);
 	mse::TXScopeObj<mse::nii_vector<Byte> > buffer(height * max_x, zbyte);
 
 	const double zdouble = 0.0;
-	//mse::mstd::vector<double> cr0(8 * max_x, zdouble);
 	mse::TXScopeObj<mse::nii_vector<double> > cr0(8 * max_x, zdouble);
 
 	/* We won't bother (safely) parallelizing this loop for now. It probably wouldn't have much effect anyway. */
@@ -166,10 +164,7 @@ int main(int argc, char* argv[])
 		ostream& out = file1.good() ? file1 : std::cout;
 
 		out << "P4\n" << mse::as_a_size_t(width) << " " << mse::as_a_size_t(height) << "\n";
-		auto xscope_buffer_proxy = mse::make_xscope_random_access_section(&buffer);
-		for (const auto byte : xscope_buffer_proxy) {
-			out.put(byte);
-		}
+		buffer.write_bytes(out);
 	}
 
 	return 0;
