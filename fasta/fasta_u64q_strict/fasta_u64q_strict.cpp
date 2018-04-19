@@ -42,9 +42,11 @@ struct IUB
 	float p;
 	char c;
 };
+/* ShareableIUB is just a version of IUB that is declared to meet the criteria for safe sharing between threads (basically
+no pointer/reference (or mutable) members). */
 typedef mse::us::TUserDeclaredAsyncShareableObj<IUB> ShareableIUB;
 
-const mse::TXScopeObj<mse::nii_string> alu0 =
+const mse::TXScopeObj<mse::nii_string> g_alu0 =
 {
 	"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
 	"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
@@ -54,33 +56,7 @@ const mse::TXScopeObj<mse::nii_string> alu0 =
 	"AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC"
 	"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 };
-
-mse::TXScopeObj<mse::nii_array<IUB, 15> > iub0 = mse::nii_array<IUB, 15>
-{ {
-	{ 0.27f, 'a' },
-	{ 0.12f, 'c' },
-	{ 0.12f, 'g' },
-	{ 0.27f, 't' },
-	{ 0.02f, 'B' },
-	{ 0.02f, 'D' },
-	{ 0.02f, 'H' },
-	{ 0.02f, 'K' },
-	{ 0.02f, 'M' },
-	{ 0.02f, 'N' },
-	{ 0.02f, 'R' },
-	{ 0.02f, 'S' },
-	{ 0.02f, 'V' },
-	{ 0.02f, 'W' },
-	{ 0.02f, 'Y' }
-	} };
-
-mse::TXScopeObj<mse::nii_array<IUB, 4> > homosapiens0 = mse::nii_array<IUB, 4>
-{ {
-	{ 0.3029549426680f, 'a' },
-	{ 0.1979883004921f, 'c' },
-	{ 0.1975473066391f, 'g' },
-	{ 0.3015094502008f, 't' }
-	} };
+auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(g_alu0);
 
 template<class iterator_type>
 void make_cumulative(iterator_type first, iterator_type last)
@@ -88,33 +64,6 @@ void make_cumulative(iterator_type first, iterator_type last)
 	std::partial_sum(first, last, first,
 		[](IUB l, IUB r) -> IUB { r.p += l.p; return r; });
 }
-
-template <class _Ty, size_t _Size>
-constexpr size_t size_of_nii_array(const mse::nii_array<_Ty, _Size>&) {
-	return _Size;
-}
-template<size_t _Size, class _TArrayPointer>
-auto make_nii_array_of_shareable_uibs(_TArrayPointer array_ptr) {
-	mse::nii_array<ShareableIUB, _Size> retval;
-	for (size_t i = 0; i < _Size; i += 1) {
-		retval[i] = (*array_ptr)[i];
-	}
-	return retval;
-}
-template <size_t _Size, class _TIUBArrayPtr>
-auto initialize_shareable_iub(_TIUBArrayPtr iub_array_ptr) {
-	auto xscope_begin_iter = mse::make_xscope_iterator(iub_array_ptr);
-	auto xscope_end_iter = xscope_begin_iter + (*iub_array_ptr).size();
-	make_cumulative(xscope_begin_iter, xscope_end_iter);
-	return mse::make_asyncsharedv2immutable<decltype(make_nii_array_of_shareable_uibs<_Size>(iub_array_ptr))>(make_nii_array_of_shareable_uibs<_Size>(iub_array_ptr));
-}
-
-/* The original (unsafe) version did some initial processing on the "iub" and "homosapiens" arrays, then proceeded to directly
-access these (non-const) global arrays from multiple different threads. The alternative (safe) approach we use here is to make
-an immutable (shareable) copy of the processed array that can be safely accessed from multiple threads. */
-auto g_iub_shimptr = initialize_shareable_iub<15>(&iub0);
-auto g_homosapiens_shimptr = initialize_shareable_iub<4>(&homosapiens0);
-auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(alu0);
 
 const int IM = 139968;
 const float IM_RECIPROCAL = 1.0f / IM;
@@ -171,33 +120,11 @@ make_repeat_generator(iterator_type first, iterator_type last)
 }
 
 template<class iterator_type>
-char convert_random(uint32_t random, iterator_type begin, iterator_type end)
+char convert_random(uint32_t random, const iterator_type& begin, const iterator_type& end)
 {
 	const float p = random * IM_RECIPROCAL;
 	auto result = std::find_if(begin, end, [p](IUB i) { return p <= i.p; });
 	return result->c;
-}
-
-char convert_IUB(uint32_t random)
-{
-	//return convert_random(random, g_iub_shimptr->ss_cbegin(g_iub_shimptr), g_iub_shimptr->ss_cend(g_iub_shimptr));
-	/* In theory, (safe) iterators based on a "shared immutable" pointer like g_iub_shimptr should be just as fast as
-	iterators based on scope pointers as neither needs to check their dereferences for nullptr. But the (msvc2017)
-	optimizer seems to prefer the latter. */
-	auto xscope_store = mse::make_xscope_strong_pointer_store(g_iub_shimptr);
-	auto iub_xscpptr = xscope_store.xscope_ptr();
-	auto xscope_cbegin = mse::make_xscope_const_iterator(iub_xscpptr);
-	auto xscope_cend = xscope_cbegin + iub_xscpptr->size();
-	return convert_random(random, xscope_cbegin, xscope_cend);
-}
-
-char convert_homosapiens(uint32_t random)
-{
-	auto xscope_store = mse::make_xscope_strong_pointer_store(g_homosapiens_shimptr);
-	auto homosapiens_xscpptr = xscope_store.xscope_ptr();
-	auto xscope_cbegin = mse::make_xscope_const_iterator(homosapiens_xscpptr);
-	auto xscope_cend = xscope_cbegin + homosapiens_xscpptr->size();
-	return convert_random(random, xscope_cbegin, xscope_cend);
 }
 
 template<class iterator_type>
@@ -287,16 +214,19 @@ mse::msear_size_t fillBlock(mse::msear_size_t currentThread, iterator_type begin
 	}
 }
 
-template<class BlockIter, class CharIter, class converter_type>
-mse::msear_size_t convertBlock(BlockIter begin, BlockIter end, CharIter outCharacter, converter_type& converter)
+template<class BlockIter, class CharIter, class converter_function_type, class converter_data_xscope_pointer_type>
+mse::msear_size_t convertBlock(BlockIter begin, BlockIter end, CharIter outCharacter, converter_function_type convert, converter_data_xscope_pointer_type converter_data_xscpcptr)
 {
+	auto xscope_data_begin_citer = mse::make_xscope_const_iterator(converter_data_xscpcptr);
+	auto xscope_data_end_citer = xscope_data_begin_citer + mse::as_a_size_t((*converter_data_xscpcptr).size());
+
 	const auto beginCharacter = outCharacter;
 	mse::msear_size_t col = 0;
 	for (; begin != end; ++begin)
 	{
 		const uint32_t random = *begin;
 
-		*outCharacter = converter(random);
+		*outCharacter = convert(random, xscope_data_begin_citer, xscope_data_end_citer);
 		++outCharacter;
 		if (++col >= CHARS_PER_LINE)
 		{
@@ -353,9 +283,11 @@ void writeCharacters(mse::msear_size_t currentThread, char_array_pointer_type ch
 	}
 }
 
-template<class generator_make_function_type, class converter_type>
-void work(mse::msear_size_t currentThread, generator_make_function_type generator_make_function, converter_type converter)
+template<class generator_make_function_type, class converter_function_type, class converter_data_type>
+void work(mse::msear_size_t currentThread, generator_make_function_type generator_make_function, converter_function_type convert, converter_data_type converter_data)
 {
+	mse::TXScopeObj<converter_data_type> xscope_converter_data = converter_data;
+
 	typedef decltype(generator_make_function()) generator_type;
 	mse::TXScopeObj<generator_type> generator = generator_make_function();
 	auto generator_xscpptr = &generator;
@@ -375,14 +307,14 @@ void work(mse::msear_size_t currentThread, generator_make_function_type generato
 
 		auto block_begin_iter2 = mse::make_xscope_iterator(&block);
 		auto characters_begin_iter = mse::make_xscope_iterator(&characters);
-		const auto charactersGenerated = convertBlock(block_begin_iter2, block_begin_iter2 + bytesGenerated, characters_begin_iter, converter);
+		const auto charactersGenerated = convertBlock(block_begin_iter2, block_begin_iter2 + bytesGenerated, characters_begin_iter, convert, &xscope_converter_data);
 
 		writeCharacters(currentThread, &characters, charactersGenerated);
 	}
 }
 
-template<class generator_make_function_type, class converter_type>
-void make(const mse::nii_string/*const char* */desc, mse::CInt n, generator_make_function_type generator_make_function, converter_type converter) {
+template<class generator_make_function_type, class converter_function_type, class converter_data_type>
+void make(const mse::nii_string/*const char* */desc, mse::CInt n, generator_make_function_type generator_make_function, converter_function_type convert, converter_data_type converter_data) {
 	std::cout << '>' << desc << '\n';
 
 	{
@@ -398,10 +330,10 @@ void make(const mse::nii_string/*const char* */desc, mse::CInt n, generator_make
 	mse::mstd::vector< mse::mstd::thread > threads(THREADS_TO_USE - 1);
 	for (mse::msear_size_t i = 0; i < threads.size(); ++i)
 	{
-		threads[i] = mse::mstd::thread(work< generator_make_function_type, converter_type >, mse::as_a_size_t(i), generator_make_function, converter);
+		threads[i] = mse::mstd::thread(work< generator_make_function_type, converter_function_type, converter_data_type >, mse::as_a_size_t(i), generator_make_function, convert, converter_data);
 	}
 
-	work(threads.size(), generator_make_function, converter);
+	work(threads.size(), generator_make_function, convert, converter_data);
 
 	for (auto& thread : threads)
 	{
@@ -413,10 +345,10 @@ auto make_alu_repeat_generator() {
 	return make_repeat_generator(g_alu_shimptr->ss_cbegin(g_alu_shimptr), g_alu_shimptr->ss_cend(g_alu_shimptr));
 }
 auto make_iub_random_generator() {
-	return make_random_generator(g_iub_shimptr->ss_cbegin(g_iub_shimptr), g_iub_shimptr->ss_cend(g_iub_shimptr));
+	return make_random_generator(nullptr, nullptr);
 }
 auto make_homosapiens_random_generator() {
-	return make_random_generator(g_homosapiens_shimptr->ss_cbegin(g_homosapiens_shimptr), g_homosapiens_shimptr->ss_cend(g_homosapiens_shimptr));
+	return make_random_generator(nullptr, nullptr);
 }
 
 int main(int argc, char *argv[])
@@ -427,23 +359,83 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	//make_cumulative(iub.begin(), iub.end());
-	//make_cumulative(homosapiens.begin(), homosapiens.end());
+	/* Non-const globals are considered unsafe, so these were made non-global. */
+	mse::TXScopeObj<mse::nii_array<IUB, 15> > iub0 = mse::nii_array<IUB, 15>
+	{ {
+		{ 0.27f, 'a' },
+		{ 0.12f, 'c' },
+		{ 0.12f, 'g' },
+		{ 0.27f, 't' },
+		{ 0.02f, 'B' },
+		{ 0.02f, 'D' },
+		{ 0.02f, 'H' },
+		{ 0.02f, 'K' },
+		{ 0.02f, 'M' },
+		{ 0.02f, 'N' },
+		{ 0.02f, 'R' },
+		{ 0.02f, 'S' },
+		{ 0.02f, 'V' },
+		{ 0.02f, 'W' },
+		{ 0.02f, 'Y' }
+		} };
+	mse::TXScopeObj<mse::nii_array<IUB, 4> > homosapiens0 = mse::nii_array<IUB, 4>
+	{ {
+		{ 0.3029549426680f, 'a' },
+		{ 0.1979883004921f, 'c' },
+		{ 0.1975473066391f, 'g' },
+		{ 0.3015094502008f, 't' }
+		} };
+
+	auto iub0_begin = mse::make_xscope_iterator(&iub0);
+	auto iub0_end = iub0_begin + iub0.size();
+	make_cumulative(iub0_begin, iub0_end);
+
+	auto homosapiens0_begin = mse::make_xscope_iterator(&homosapiens0);
+	auto homosapiens0_end = homosapiens0_begin + homosapiens0.size();
+	make_cumulative(homosapiens0_begin, homosapiens0_end);
+
+	/* Because we're going to pass and/or share these arrays between threads we need copies that are recognized (by the
+	library) as safely shareable. */
+	typedef mse::nii_array<ShareableIUB, 15> shareable_iub_array_t;
+	mse::TXScopeObj<shareable_iub_array_t> iub;
+	for (mse::msear_size_t i = 0; i < iub0.size(); i += 1) {
+		iub[i] = iub0[i];
+	}
+	typedef mse::nii_array<ShareableIUB, 4> shareable_homosapiens_array_t;
+	mse::TXScopeObj<shareable_homosapiens_array_t> homosapiens;
+	for (mse::msear_size_t i = 0; i < homosapiens0.size(); i += 1) {
+		homosapiens[i] = homosapiens0[i];
+	}
+
+	struct functions {
+		typedef decltype(mse::make_xscope_const_iterator(&g_alu0)) alu_xscope_citer_type;
+		static char convert_trivial(char c, alu_xscope_citer_type, alu_xscope_citer_type) {
+			return c;
+		}
+		typedef decltype(mse::make_xscope_const_iterator(&iub)) iub_xscope_citer_type;
+		static char convert_IUB(uint32_t random, const iub_xscope_citer_type& cbegin, const iub_xscope_citer_type& cend) {
+			return convert_random(random, cbegin, cend);
+		}
+		typedef decltype(mse::make_xscope_const_iterator(&homosapiens)) homosapiens_xscope_citer_type;
+		static char convert_homosapiens(uint32_t random, const homosapiens_xscope_citer_type& cbegin, const homosapiens_xscope_citer_type& cend) {
+			return convert_random(random, cbegin, cend);
+		}
+	};
 
 	{
 		make("ONE Homo sapiens alu", n * 2,
 			make_alu_repeat_generator,
-			convert_trivial);
+			functions::convert_trivial, mse::nii_string("placeholder data"));
 	}
 	{
 		make("TWO IUB ambiguity codes", n * 3,
 			make_iub_random_generator,
-			convert_IUB);
+			functions::convert_IUB, shareable_iub_array_t(iub));
 	}
 	{
 		make("THREE Homo sapiens frequency", n * 5,
 			make_homosapiens_random_generator,
-			convert_homosapiens);
+			functions::convert_homosapiens, shareable_homosapiens_array_t(homosapiens));
 	}
 	return 0;
 }
