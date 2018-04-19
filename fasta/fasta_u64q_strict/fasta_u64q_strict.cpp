@@ -346,11 +346,7 @@ void writeCharacters(mse::msear_size_t currentThread, char_array_pointer_type ch
 
 			// Do the work.
 			if (count > (*char_array_pointer).size()) { std::cerr << "fatal error\n"; std::terminate(); }
-			auto it = (*char_array_pointer).cbegin();
-			for (mse::msear_size_t i = 0; i < count; i += 1) {
-				std::cout.put(*it);
-				++it;
-			}
+			(*char_array_pointer).write_bytes(std::cout);
 			//std::fwrite((*char_array_pointer).data(), count, 1, stdout);
 			return;
 		}
@@ -364,19 +360,22 @@ void work(mse::msear_size_t currentThread, generator_make_function_type generato
 	mse::TXScopeObj<generator_type> generator = generator_make_function();
 	auto generator_xscpptr = &generator;
 
-	mse::mstd::array< typename generator_type::result_t, VALUES_PER_BLOCK > block;
-	mse::TXScopeObj<mse::mstd::array< char, CHARS_PER_BLOCK_INCL_NEWLINES > > characters;
+	mse::TXScopeObj<mse::nii_array< typename generator_type::result_t, VALUES_PER_BLOCK > > block;
+	mse::TXScopeObj<mse::nii_array< char, CHARS_PER_BLOCK_INCL_NEWLINES > > characters;
 
 	while (true)
 	{
-		const auto bytesGenerated = fillBlock(currentThread, block.begin(), generator_xscpptr);
+		auto block_begin_iter = mse::make_xscope_iterator(&block);
+		const auto bytesGenerated = fillBlock(currentThread, block_begin_iter, generator_xscpptr);
 
 		if (bytesGenerated == 0)
 		{
 			break;
 		}
 
-		const auto charactersGenerated = convertBlock(block.begin(), block.begin() + bytesGenerated, characters.begin(), converter);
+		auto block_begin_iter2 = mse::make_xscope_iterator(&block);
+		auto characters_begin_iter = mse::make_xscope_iterator(&characters);
+		const auto charactersGenerated = convertBlock(block_begin_iter2, block_begin_iter2 + bytesGenerated, characters_begin_iter, converter);
 
 		writeCharacters(currentThread, &characters, charactersGenerated);
 	}
