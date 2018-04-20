@@ -36,6 +36,7 @@ compiles with gcc fasta.cpp -std=c++11 -O2
 #include "mseasyncshared.h"
 #include "msescope.h"
 #include "msepoly.h"
+#include "msealgorithm.h"
 
 struct IUB
 {
@@ -123,7 +124,7 @@ template<class iterator_type>
 char convert_random(uint32_t random, const iterator_type& begin, const iterator_type& end)
 {
 	const float p = random * IM_RECIPROCAL;
-	auto result = std::find_if(begin, end, [p](IUB i) { return p <= i.p; });
+	auto result = mse::find_if(begin, end, [p](IUB i) { return p <= i.p; });
 	return result->c;
 }
 

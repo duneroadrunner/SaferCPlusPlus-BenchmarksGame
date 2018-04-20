@@ -244,9 +244,9 @@ namespace mse {
 			class xscope_const_iterator;
 			class xscope_iterator;
 
-			class const_iterator : public _MA::random_access_const_iterator_base {
+			class const_iterator : public _MA::na_const_iterator_base {
 			public:
-				typedef typename _MA::random_access_const_iterator_base base_class;
+				typedef typename _MA::na_const_iterator_base base_class;
 				typedef typename base_class::iterator_category iterator_category;
 				typedef typename base_class::value_type value_type;
 				typedef typename base_class::difference_type difference_type;
@@ -322,9 +322,9 @@ namespace mse {
 				friend class iterator;
 				friend class xscope_const_iterator;
 			};
-			class iterator : public _MA::random_access_iterator_base {
+			class iterator : public _MA::na_iterator_base {
 			public:
-				typedef typename _MA::random_access_iterator_base base_class;
+				typedef typename _MA::na_iterator_base base_class;
 				typedef typename base_class::iterator_category iterator_category;
 				typedef typename base_class::value_type value_type;
 				typedef typename base_class::difference_type difference_type;
@@ -468,9 +468,9 @@ namespace mse {
 				return (m_nii_array < _Right.m_nii_array);
 			}
 
-			class xscope_const_iterator : public _MA::random_access_const_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase, public StrongPointerNotAsyncShareableTagBase {
+			class xscope_const_iterator : public _MA::na_const_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase, public StrongPointerNotAsyncShareableTagBase {
 			public:
-				typedef typename _MA::random_access_const_iterator_base base_class;
+				typedef typename _MA::na_const_iterator_base base_class;
 				typedef typename base_class::iterator_category iterator_category;
 				typedef typename base_class::value_type value_type;
 				typedef typename base_class::difference_type difference_type;
@@ -537,7 +537,7 @@ namespace mse {
 					nii_array_xscope_ss_const_iterator_type().operator=(_Right_cref.nii_array_xscope_ss_iterator_type());
 					return (*this);
 				}
-				xscope_const_iterator& operator=(const typename _Myt::const_iterator& _Right_cref) {
+				xscope_const_iterator& operator=(const /*typename _Myt::*/const_iterator& _Right_cref) {
 					//nii_array_xscope_ss_const_iterator_type().operator=(_Right_cref.nii_array_reg_ss_const_iterator_type());
 					if (!(_Right_cref.target_container_ptr())
 						|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) { 
@@ -547,7 +547,7 @@ namespace mse {
 					(*this) += _Right_cref.position();
 					return (*this);
 				}
-				xscope_const_iterator& operator=(const typename _Myt::iterator& _Right_cref) {
+				xscope_const_iterator& operator=(const /*typename _Myt::*/iterator& _Right_cref) {
 					//nii_array_xscope_ss_const_iterator_type().operator=(_Right_cref.nii_array_reg_ss_iterator_type());
 					if (!(_Right_cref.target_container_ptr())
 						|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
@@ -575,9 +575,9 @@ namespace mse {
 				typename _MA::xscope_ss_const_iterator_type m_xscope_ss_const_iterator;
 				friend class /*_Myt*/array<_Ty, _Size>;
 			};
-			class xscope_iterator : public _MA::random_access_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase, public StrongPointerNotAsyncShareableTagBase {
+			class xscope_iterator : public _MA::na_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase, public StrongPointerNotAsyncShareableTagBase {
 			public:
-				typedef typename _MA::random_access_iterator_base base_class;
+				typedef typename _MA::na_iterator_base base_class;
 				typedef typename base_class::iterator_category iterator_category;
 				typedef typename base_class::value_type value_type;
 				typedef typename base_class::difference_type difference_type;
@@ -735,6 +735,33 @@ namespace mse {
 			return xscope_array_iterator<_TArray>(owner_ptr);
 		}
 #endif // !defined(MSE_REGISTEREDPOINTER_DISABLED)
+
+		template<class _TArrayPointer, class size_type = typename std::remove_reference<decltype(*(std::declval<_TArrayPointer>()))>::type::size_type>
+		auto make_xscope_const_iterator(const _TArrayPointer& owner_ptr, size_type index) {
+			return mse::mstd::make_xscope_const_iterator(owner_ptr) + index;
+		}
+		template<class _TArrayPointer, class size_type = typename std::remove_reference<decltype(*(std::declval<_TArrayPointer>()))>::type::size_type>
+		auto make_xscope_iterator(const _TArrayPointer& owner_ptr, size_type index) {
+			return mse::mstd::make_xscope_iterator(owner_ptr) + index;
+		}
+
+		template<class _TArrayPointer>
+		auto make_xscope_begin_const_iterator(const _TArrayPointer& owner_ptr) {
+			return mse::mstd::make_xscope_const_iterator(owner_ptr);
+		}
+		template<class _TArrayPointer>
+		auto make_xscope_begin_iterator(const _TArrayPointer& owner_ptr) {
+			return mse::mstd::make_xscope_iterator(owner_ptr);
+		}
+
+		template<class _TArrayPointer>
+		auto make_xscope_end_const_iterator(const _TArrayPointer& owner_ptr) {
+			return mse::mstd::make_xscope_begin_const_iterator(owner_ptr) + (*owner_ptr).size();
+		}
+		template<class _TArrayPointer>
+		auto make_xscope_end_iterator(const _TArrayPointer& owner_ptr) {
+			return mse::mstd::make_xscope_begin_iterator(owner_ptr) + (*owner_ptr).size();
+		}
 
 #endif /*MSE_MSTDARRAY_DISABLED*/
 

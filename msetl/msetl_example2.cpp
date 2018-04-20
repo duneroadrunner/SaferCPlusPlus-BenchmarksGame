@@ -31,6 +31,7 @@
 #include "mseprimitives.h"
 #include "mselegacyhelpers.h"
 #include "msemstdstring.h"
+#include "msealgorithm.h"
 #include <algorithm>
 #include <iostream>
 #include <ctime>
@@ -249,6 +250,23 @@ void msetl_example2() {
 		std::swap(vo2, *(access_requester2.writelock_ptr()));
 
 		//std::for_each(vo2.begin(), vo2.end(), [](mse::nii_string& ns) { ns.append("z"); });
+	}
+	{
+		mse::TXScopeObj<mse::nii_array<int, 3> > xscope_na1 = mse::nii_array<int, 3>{ 1, 2, 3 };
+		mse::TXScopeObj<mse::nii_array<int, 3> > xscope_na2 = mse::nii_array<int, 3>{ 1, 2, 3 };
+		auto xscope_na1_begin_citer = mse::make_xscope_const_iterator(&xscope_na1);
+		auto xscope_na1_end_citer = mse::make_xscope_const_iterator(&xscope_na1);
+		xscope_na1_end_citer.set_to_end_marker();
+		auto xscope_na2_begin_iter = mse::make_xscope_iterator(&xscope_na2);
+		auto res1 = mse::find_if(xscope_na1_begin_citer, xscope_na1_end_citer, [](int x) { return 2 == x; });
+		//std::transform(xscope_na1_begin_citer, xscope_na1_end_citer, xscope_na2_begin_iter, [](int x) { return 2 * x; });
+		int q = 5;
+	}
+	{
+		auto a1 = std::array<int, 3>{ 1, 2, 3 };
+		auto a2 = std::array<int, 3>{ 1, 2, 3 };
+		std::transform(a1.cbegin(), a1.cend(), a2.begin(), [](int x) { return 2 * x; });
+		int q = 5;
 	}
 
 	{

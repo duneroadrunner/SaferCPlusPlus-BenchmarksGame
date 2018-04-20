@@ -27,7 +27,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{8BF94EB9-47B8-4338-93A5-01DEE42BBAC2}</ProjectGuid>
+    <ProjectGuid>{4249C722-37EA-4910-930D-C7475243F26E}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>msetl</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
@@ -249,6 +249,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="msealgorithm.h" />
     <ClInclude Include="mseany.h" />
     <ClInclude Include="mseasyncshared.h" />
     <ClInclude Include="mseivector.h" />
