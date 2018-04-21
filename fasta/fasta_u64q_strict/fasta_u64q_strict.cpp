@@ -277,7 +277,7 @@ void writeCharacters(mse::msear_size_t currentThread, char_array_pointer_type ch
 
 			// Do the work.
 			if (count > (*char_array_pointer).size()) { std::cerr << "fatal error\n"; std::terminate(); }
-			(*char_array_pointer).write_bytes(std::cout);
+			(*char_array_pointer).write_bytes(std::cout, count);
 			//std::fwrite((*char_array_pointer).data(), count, 1, stdout);
 			return;
 		}
