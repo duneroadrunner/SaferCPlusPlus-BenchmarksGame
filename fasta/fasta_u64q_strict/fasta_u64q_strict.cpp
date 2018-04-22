@@ -414,7 +414,7 @@ int main(int argc, char *argv[])
 	}
 
 	struct functions {
-		typedef mse::TXScopeFixedPointer<mse::TXScopeObj<mse::nii_string> > alu_xscope_pointer_type;
+		typedef mse::TXScopeFixedPointer<mse::nii_string> alu_xscope_pointer_type;
 		static char convert_trivial(char c, alu_xscope_pointer_type) {
 			return c;
 		}
