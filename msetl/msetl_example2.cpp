@@ -259,6 +259,8 @@ void msetl_example2() {
 		xscope_na1_end_citer.set_to_end_marker();
 		auto xscope_na2_begin_iter = mse::make_xscope_iterator(&xscope_na2);
 		auto res1 = mse::find_if(xscope_na1_begin_citer, xscope_na1_end_citer, [](int x) { return 2 == x; });
+		auto res2 = mse::xscope_ra_const_find_if(&xscope_na1, [](int x) { return 2 == x; });
+		auto res3 = mse::xscope_ra_const_find_element_known_to_be_present(&xscope_na1, [](int x) { return 2 == x; });
 		//std::transform(xscope_na1_begin_citer, xscope_na1_end_citer, xscope_na2_begin_iter, [](int x) { return 2 * x; });
 		int q = 5;
 	}

@@ -47,7 +47,7 @@ struct IUB
 no pointer/reference (or mutable) members). */
 typedef mse::us::TUserDeclaredAsyncShareableObj<IUB> ShareableIUB;
 
-const mse::TXScopeObj<mse::nii_string> g_alu0 =
+const mse::TXScopeObj<mse::nii_string> alu =
 {
 	"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
 	"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
@@ -57,7 +57,7 @@ const mse::TXScopeObj<mse::nii_string> g_alu0 =
 	"AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC"
 	"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 };
-auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(g_alu0);
+auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(alu);
 
 template<class iterator_type>
 void make_cumulative(iterator_type first, iterator_type last)
@@ -120,11 +120,11 @@ make_repeat_generator(iterator_type first, iterator_type last)
 	return repeat_generator_type<iterator_type>(first, last);
 }
 
-template<class iterator_type>
-char convert_random(uint32_t random, const iterator_type& begin, const iterator_type& end)
+template<class array_ptr_t>
+char convert_random(uint32_t random, const array_ptr_t& data_array_ptr)
 {
 	const float p = random * IM_RECIPROCAL;
-	auto result = mse::find_if(begin, end, [p](IUB i) { return p <= i.p; });
+	auto result = mse::xscope_ra_const_find_if(data_array_ptr, [p](IUB i) { return p <= i.p; }).value();
 	return result->c;
 }
 
@@ -227,7 +227,7 @@ mse::msear_size_t convertBlock(BlockIter begin, BlockIter end, CharIter outChara
 	{
 		const uint32_t random = *begin;
 
-		*outCharacter = convert(random, xscope_data_begin_citer, xscope_data_end_citer);
+		*outCharacter = convert(random, converter_data_xscpcptr);
 		++outCharacter;
 		if (++col >= CHARS_PER_LINE)
 		{
@@ -275,10 +275,15 @@ void writeCharacters(mse::msear_size_t currentThread, char_array_pointer_type ch
 
 			*out_state_writelock_ptr = out_state;
 
+//define DISABLE_OUTPUT
+#ifndef DISABLE_OUTPUT
+
 			// Do the work.
-			if (count > (*char_array_pointer).size()) { std::cerr << "fatal error\n"; std::terminate(); }
 			(*char_array_pointer).write_bytes(std::cout, count);
 			//std::fwrite((*char_array_pointer).data(), count, 1, stdout);
+
+#endif // !DISABLE_OUTPUT
+
 			return;
 		}
 	}
@@ -364,27 +369,27 @@ int main(int argc, char *argv[])
 	mse::TXScopeObj<mse::nii_array<IUB, 15> > iub0 = mse::nii_array<IUB, 15>
 	{ {
 		{ 0.27f, 'a' },
-		{ 0.12f, 'c' },
-		{ 0.12f, 'g' },
-		{ 0.27f, 't' },
-		{ 0.02f, 'B' },
-		{ 0.02f, 'D' },
-		{ 0.02f, 'H' },
-		{ 0.02f, 'K' },
-		{ 0.02f, 'M' },
-		{ 0.02f, 'N' },
-		{ 0.02f, 'R' },
-		{ 0.02f, 'S' },
-		{ 0.02f, 'V' },
-		{ 0.02f, 'W' },
-		{ 0.02f, 'Y' }
+	{ 0.12f, 'c' },
+	{ 0.12f, 'g' },
+	{ 0.27f, 't' },
+	{ 0.02f, 'B' },
+	{ 0.02f, 'D' },
+	{ 0.02f, 'H' },
+	{ 0.02f, 'K' },
+	{ 0.02f, 'M' },
+	{ 0.02f, 'N' },
+	{ 0.02f, 'R' },
+	{ 0.02f, 'S' },
+	{ 0.02f, 'V' },
+	{ 0.02f, 'W' },
+	{ 0.02f, 'Y' }
 		} };
 	mse::TXScopeObj<mse::nii_array<IUB, 4> > homosapiens0 = mse::nii_array<IUB, 4>
 	{ {
 		{ 0.3029549426680f, 'a' },
-		{ 0.1979883004921f, 'c' },
-		{ 0.1975473066391f, 'g' },
-		{ 0.3015094502008f, 't' }
+	{ 0.1979883004921f, 'c' },
+	{ 0.1975473066391f, 'g' },
+	{ 0.3015094502008f, 't' }
 		} };
 
 	auto iub0_begin = mse::make_xscope_iterator(&iub0);
@@ -409,17 +414,17 @@ int main(int argc, char *argv[])
 	}
 
 	struct functions {
-		typedef decltype(mse::make_xscope_const_iterator(&g_alu0)) alu_xscope_citer_type;
-		static char convert_trivial(char c, alu_xscope_citer_type, alu_xscope_citer_type) {
+		typedef decltype(&(std::declval<mse::TXScopeObj<mse::nii_string> >())) alu_xscope_pointer_type;
+		static char convert_trivial(char c, alu_xscope_pointer_type) {
 			return c;
 		}
-		typedef decltype(mse::make_xscope_const_iterator(&iub)) iub_xscope_citer_type;
-		static char convert_IUB(uint32_t random, const iub_xscope_citer_type& cbegin, const iub_xscope_citer_type& cend) {
-			return convert_random(random, cbegin, cend);
+		typedef decltype(&shareable_iub_array_t(iub)) iub_xscope_pointer_type;
+		static char convert_IUB(uint32_t random, iub_xscope_pointer_type iub_xscope_pointer) {
+			return convert_random(random, iub_xscope_pointer);
 		}
-		typedef decltype(mse::make_xscope_const_iterator(&homosapiens)) homosapiens_xscope_citer_type;
-		static char convert_homosapiens(uint32_t random, const homosapiens_xscope_citer_type& cbegin, const homosapiens_xscope_citer_type& cend) {
-			return convert_random(random, cbegin, cend);
+		typedef decltype(&shareable_homosapiens_array_t(homosapiens)) homosapiens_xscope_pointer_type;
+		static char convert_homosapiens(uint32_t random, homosapiens_xscope_pointer_type homosapiens_xscope_pointer) {
+			return convert_random(random, homosapiens_xscope_pointer);
 		}
 	};
 

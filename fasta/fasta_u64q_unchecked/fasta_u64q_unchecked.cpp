@@ -243,8 +243,13 @@ void writeCharacters(size_t currentThread, iterator_type begin, size_t count)
 				g_outThreadIndex = 0;
 			}
 
+//define DISABLE_OUTPUT
+#ifndef DISABLE_OUTPUT
+
 			// Do the work.
 			std::fwrite(begin, count, 1, stdout);
+
+#endif // !DISABLE_OUTPUT
 			return;
 		}
 	}
