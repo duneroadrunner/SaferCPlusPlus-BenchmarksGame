@@ -414,15 +414,15 @@ int main(int argc, char *argv[])
 	}
 
 	struct functions {
-		typedef decltype(&(std::declval<mse::TXScopeObj<mse::nii_string> >())) alu_xscope_pointer_type;
+		typedef mse::TXScopeFixedPointer<mse::TXScopeObj<mse::nii_string> > alu_xscope_pointer_type;
 		static char convert_trivial(char c, alu_xscope_pointer_type) {
 			return c;
 		}
-		typedef decltype(&shareable_iub_array_t(iub)) iub_xscope_pointer_type;
+		typedef mse::TXScopeFixedPointer<shareable_iub_array_t> iub_xscope_pointer_type;
 		static char convert_IUB(uint32_t random, iub_xscope_pointer_type iub_xscope_pointer) {
 			return convert_random(random, iub_xscope_pointer);
 		}
-		typedef decltype(&shareable_homosapiens_array_t(homosapiens)) homosapiens_xscope_pointer_type;
+		typedef mse::TXScopeFixedPointer<shareable_homosapiens_array_t> homosapiens_xscope_pointer_type;
 		static char convert_homosapiens(uint32_t random, homosapiens_xscope_pointer_type homosapiens_xscope_pointer) {
 			return convert_random(random, homosapiens_xscope_pointer);
 		}
