@@ -23,7 +23,7 @@ spectral-norm (args: "7500") | 0.60***
 
 ##### platform: msvc2017/default optimizations/x64/Windows10/Haswell (Apr 2018):
 
-Technically, the (geometric) mean result of these benchmarks is about 1.07. That is, on average, the "SaferCPlusPlus compliant" implementations were about 7% slower than the original (unsafe) implementations. If we replace the the idiosyncratic, platform specific "spectral-norm" result with the 1.02 result observed on our g++/UbuntuLinux platform, the mean becomes more like 1.19.
+Technically, the (geometric) mean result of these benchmarks is about 1.07. That is, the "SaferCPlusPlus compliant" implementations were, on average, about 7% slower than the original (unsafe) implementations. If we replace the the idiosyncratic, platform-specific "spectral-norm" result with the 1.02 result observed on our g++/UbuntuLinux platform, the mean becomes more like 1.19.
 
 In any case, the precise results aren't very meaningful, as actual performance can vary significantly by platform. But if the question is whether C++ code can be made (largely) memory safe while maintaining performance in the ballpark of the original (unsafe) code, the answer appears to be yes.
 
