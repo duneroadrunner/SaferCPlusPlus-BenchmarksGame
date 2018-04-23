@@ -40,6 +40,6 @@ benchmark | normalized elapsed time
 fasta** (args: "5000000") (output piped to null) | 1.08
 fasta** (args: "15000000") (output disabled in code) | 1.74
 
-The "fasta (combined)" value used above is simply the (geometric) mean of these two results. For reference, we observed results of about 1.40 to 1.45 on our g++/UbuntuLinux platform, with the disabling of the output seeming making little difference.
+The "fasta (combined)" value used above is simply the (geometric) mean of these two results. For reference, we observed results of about 1.40 to 1.45 on our g++/UbuntuLinux platform, with the disabling of the output seemingly making little difference.
 
 \*** The result for the "spectral-norm" benchmark might be a little surprising. While the details of the performance discrepancy have not yet been investigated, note that the original spectral-norm implementation uses OpenMP, while the converted version does not (for safety reasons). Perhaps support for OpenMP is suboptimal on the msvc2017/Windows10 platform used. For reference, we observed results of about 1.02 on our g++/UbuntuLinux platform.
