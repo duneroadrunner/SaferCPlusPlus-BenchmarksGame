@@ -1,62 +1,45 @@
 # SaferCPlusPlus-BenchmarksGame
 
-Oct 2016
+Apr 2018
   
 
-This repository contains benchmarks originally from ["The Computer Language Benchmarks Game"](http://benchmarksgame.alioth.debian.org), implemented in [SaferCPlusPlus](https://github.com/duneroadrunner/SaferCPlusPlus), a memory safe dialect/subset of C++. Three types of implementations are provided - "unchecked", "checked" and "strict". The "unchecked" versions are the original implementations using traditional (unsafe) C++. The "checked" and "strict" versions use the SaferCPlusPlus library to increase memory safety. The "checked" versions are technically not quite as safe as the "strict" versions, the main differences being:
+This repository contains benchmarks originally from ["The Computer Language Benchmarks Game"](https://duckduckgo.com/?q=The+Computer+Language+Benchmarks+Game&ia=web), implemented in [SaferCPlusPlus](https://github.com/duneroadrunner/SaferCPlusPlus), a memory safe dialect/subset of C++. 
 
-- "Checked" implementations accomodate the use of C++ references, even though they are technically unsafe.
-- "Checked" implementations accomodate the use of mse::msearray<> and mse::msevector<> in lieu of their slightly safer counterparts, mse::mstd::array<> and mse::mstd::vector<>.
-- "Strict" implementations generally define the MSE_MSEARRAY_USE_MSE_PRIMITIVES and MSE_MSEVECTOR_USE_MSE_PRIMITIVES preprocessor directives which cause the arrays and vectors to use mse::CInt and mse::CSize_t in their implementation and interfaces in lieu of their "less safe" native counterparts.
+The orginal implementations using traditional (unsafe) C++ are in the subdirectories named "unchecked". The versions in the subdirectories named "strict" are made "SaferCPlusPlus compliant" by eliminating (to the extent possible) potentially (memory) unsafe C++ elements, generally substituting them with safe replacements provided by the SaferCPlusPlus library. The subdirectories named "checked" contain versions that are partially SaferCPlusPlus compliant, though at this point the "checked" implementations are somewhat out-of-date.
 
-Note that these are fairly direct translations of the original C++ implementation. This often results in a lot of redundant bounds checking. In many cases the code could be reworked to significantly reduce the redundancy.  
+In addition to a sample measure of SaferCPlusPlus' performance cost, the implementations in this repository can be useful as code examples that help demonstrate how to use the SaferCPlusPlus library to add memory safety to your C++ code while preserving maximal performance.
 
-The provided code has been tested to work with msvc2015 and g++5.3 (as of Oct 2016).  
+The code has been tested with msvc2017 and g++7.2 (as of Apr 2018). (Note there appears to be a bug in g++5.4 that prevents it from compiling the converted "fasta" benchmark.)
 
-Sample results (normalized elapsed time):
+Sample results:
 
-#### n-body (args: "50000000")
+benchmark | normalized elapsed time
+--------- | -----------------------
+n-body (args: "50000000") | 1.05
+binary-trees (indices)* (args: "21") | 1.29
+fasta (combined)** | 1.37
+mandelbrot (args: "20000 out.pbm") | 1.25
+spectral-norm (args: "7500") | 0.60***
 
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.08 | 1.15
+##### platform: msvc2017/default optimizations/x64/Windows10/Haswell (Apr 2018):
 
-#### binary-trees (indices)* (args: "20")
+Technically, the (geometric) mean result of these benchmarks is about 1.07. That is, the "SaferCPlusPlus compliant" implementations were, on average, about 7% slower than the original (unsafe) implementations. If we replace the the idiosyncratic, platform-specific "spectral-norm" result with the 1.02 result observed on our g++/UbuntuLinux platform, the mean becomes more like 1.19.
 
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.10 | 1.44
-
-#### fasta** (args: "5000000") (standard output piped to null)
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.77 | 1.86
-
-#### mandelbrot (args: "10000 out.pbm")
-
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.17 | 1.37
-
-#### spectral-norm (args: "5500")
-
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.00 | 1.00
-
-##### platform: msvc2015/default optimizations/x64/Windows10/Haswell (Oct 2016):
-
-#### (geometric) mean result
-
-unchecked | checked | strict
---------- | ------- | ------
-1.00 | 1.20 | 1.33
-
-That is, on average, "checked" SaferCPlusPlus implementations were 20% slower and "strict" SaferCPlusPlus implementations were 33% slower than the original (unsafe) implementations.
-
-<br>
-\* There is a marginally faster implementation of binary-trees using pointers instead of indices. That implementation could also be translated to SaferCPlusPlus, but would be slower.  
-
-\** The performance discrepencies in the "fasta" benchmark are largely not related to the performance of the SaferCPlusPlus elements, but rather the "safer" programming style SaferCPlusPlus encourages with respect to sharing objects between asynchronous threads. In particular, the original "unchecked" implementation of the fasta benchmark engages in a lot of direct writes to global and static variables from multiple different asynchronous threads. As a general rule, SaferCPlusPlus considers this an unsafe practice. And so the "checked" and "strict" SaferCPlusPlus implementations instead replace those direct accesses with safer ones, not bothering to factor the overhead out of the inner loops.
+In any case, the precise results aren't very meaningful, as actual performance can vary significantly by platform. But if the question is whether C++ code can be made (largely) memory safe while maintaining performance in the ballpark of the original (unsafe) code, the answer appears to be yes.
 
 
+&nbsp;
+
+
+\* There is a marginally faster implementation of the "binary-trees" benchmark using pointers instead of indices. That implementation could also be translated to SaferCPlusPlus, but would be slower.  
+
+\** On the msvc2017/Windows10 platform used, the fasta benchmark is actually dominated by writing to "standard out", even when that output is piped to null. This is not the case, for example, when tested on our g++/UbuntuLinux platform. So we added to the benchmark the option to disable writing to standard out. The results with and without this option were observed as follows:
+
+benchmark | normalized elapsed time
+--------- | -----------------------
+fasta** (args: "5000000") (output piped to null) | 1.08
+fasta** (args: "15000000") (output disabled in code) | 1.74
+
+The "fasta (combined)" value used above is simply the (geometric) mean of these two results. For reference, we observed results of about 1.40 to 1.45 on our g++/UbuntuLinux platform, with the disabling of the output seemingly making little difference.
+
+\*** The result for the "spectral-norm" benchmark might be a little surprising. While the details of the performance discrepancy have not yet been investigated, note that the original spectral-norm implementation uses OpenMP, while the converted version does not (for safety reasons). Perhaps support for OpenMP is suboptimal on the msvc2017/Windows10 platform used. For reference, we observed results of about 1.02 on our g++/UbuntuLinux platform.
