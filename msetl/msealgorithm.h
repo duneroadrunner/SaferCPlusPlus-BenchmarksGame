@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include "msescope.h"
-#include "msemsearray.h"
 #include "mseoptional.h"
 
 #ifdef MSE_CUSTOM_THROW_DEFINITION
@@ -22,6 +21,34 @@
 #endif // MSE_CUSTOM_THROW_DEFINITION
 
 namespace mse {
+
+	/* Forward declarations of the "make_xscope_iterator()" template functions. */
+
+	template<class _TArray> auto make_xscope_const_iterator(const mse::TXScopeFixedConstPointer<_TArray>& owner_ptr);
+	template<class _TArray> auto make_xscope_const_iterator(const mse::TXScopeFixedPointer<_TArray>& owner_ptr);
+#if !defined(MSE_SCOPEPOINTER_DISABLED)
+	template<class _TArray> auto make_xscope_const_iterator(const mse::TXScopeItemFixedConstPointer<_TArray>& owner_ptr);
+	template<class _TArray> auto make_xscope_const_iterator(const mse::TXScopeItemFixedPointer<_TArray>& owner_ptr);
+#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
+
+	template<class _TArray> auto make_xscope_iterator(const mse::TXScopeFixedPointer<_TArray>& owner_ptr);
+#if !defined(MSE_SCOPEPOINTER_DISABLED)
+	template<class _TArray> auto make_xscope_iterator(const mse::TXScopeItemFixedPointer<_TArray>& owner_ptr);
+#endif // !defined(MSE_REGISTEREDPOINTER_DISABLED)
+
+	/* Overloads for rsv::TReturnableFParam<>. */
+	//template <typename _Ty> auto make_xscope_const_iterator(const rsv::TReturnableFParam<_Ty>& param);
+	// template <typename _Ty> auto make_xscope_iterator(const rsv::TReturnableFParam<_Ty>& param);
+
+	template<class _TArrayPointer, class size_type> auto make_xscope_const_iterator(const _TArrayPointer& owner_ptr, size_type index);
+	template<class _TArrayPointer, class size_type> auto make_xscope_iterator(const _TArrayPointer& owner_ptr, size_type index);
+
+	template<class _TArrayPointer> auto make_xscope_begin_const_iterator(const _TArrayPointer& owner_ptr);
+	template<class _TArrayPointer> auto make_xscope_begin_iterator(const _TArrayPointer& owner_ptr);
+
+	template<class _TArrayPointer> auto make_xscope_end_const_iterator(const _TArrayPointer& owner_ptr);
+	template<class _TArrayPointer> auto make_xscope_end_iterator(const _TArrayPointer& owner_ptr);
+
 
 	namespace impl {
 		namespace us {
@@ -40,211 +67,322 @@ namespace mse {
 			}
 		}
 
-		template<class _InIt, class _Pr>
-		class c_find_if {
+		template<class _InIt>
+		class TXScopeSpecializedFirstAndLast {
 		public:
-			typedef decltype(std::find_if(std::declval<_InIt>(), std::declval<_InIt>(), std::declval<_Pr>())) result_type;
-			result_type result;
-			c_find_if(const _InIt& _First, const _InIt& _Last, _Pr _Pred) : result(std::find_if(_First, _Last, _Pred)) {}
+			TXScopeSpecializedFirstAndLast(const _InIt& _First, const _InIt& _Last) : m_first(_First), m_last(_Last) {}
+			const auto& first() const {
+				return m_first;
+			}
+			const auto& last() const {
+				return m_last;
+			}
+
+		private:
+			const _InIt& m_first;
+			const _InIt& m_last;
 		};
 
-		template<class _Container, class _Pr>
-		class xscope_c_ra_const_find_if {
+		template<class _InIt>
+		using item_pointer_type_from_iterator = typename std::remove_const<typename std::remove_reference<
+				decltype(impl::TXScopeSpecializedFirstAndLast<_InIt>(std::declval<_InIt>(), std::declval<_InIt>()).first())
+			>::type>::type;
+
+		template<class _ContainerPointer>
+		class TXScopeRangeIterProvider {
 		public:
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef mse::xscope_optional<TXScopeItemFixedConstPointer<element_t> > result_type;
+			typedef decltype(mse::make_xscope_begin_iterator(std::declval<_ContainerPointer>())) iter_t;
+			TXScopeRangeIterProvider(const _ContainerPointer& _XscpPtr) : m_begin(mse::make_xscope_begin_iterator(_XscpPtr))
+				, m_end(mse::make_xscope_end_iterator(_XscpPtr)) {}
+			const auto& begin() const {
+				return m_begin;
+			}
+			const auto& end() const {
+				return m_end;
+			}
+
+		private:
+			iter_t m_begin;
+			iter_t m_end;
+		};
+
+		template<class _ContainerPointer>
+		using item_pointer_type_from_container_pointer = item_pointer_type_from_iterator<
+			typename std::remove_const<typename std::remove_reference<
+				decltype(TXScopeRangeIterProvider<_ContainerPointer>(std::declval<_ContainerPointer>()).begin())
+			>::type>::type>;
+	}
+
+	/* find_if() */
+
+	namespace impl {
+		inline auto find_if_ptr_placeholder_predicate() {
+			auto retval = [](auto) { return true; };
+			return retval;
+		};
+		template<class _InIt, class _Pr = decltype(find_if_ptr_placeholder_predicate())>
+		class c_find_if_ptr {
+		public:
+			typedef item_pointer_type_from_iterator<_InIt> item_pointer_type;
+			typedef typename std::remove_reference<_InIt>::type result_type;
 			result_type result;
-			xscope_c_ra_const_find_if(const TXScopeItemFixedConstPointer<_Container>& _XscpPtr, _Pr _Pred)
+			c_find_if_ptr(const _InIt& _First, const _InIt& _Last, _Pr _Pred) : result(eval(_First, _Last, _Pred)) {}
+		private:
+			static result_type eval(const _InIt& _First, const _InIt& _Last, _Pr _Pred) {
+				const auto xs_iters = TXScopeSpecializedFirstAndLast<_InIt>(_First, _Last);
+				auto current = xs_iters.first();
+				for (; current != xs_iters.last(); ++current) {
+					if (_Pred(current)) {
+						break;
+					}
+				}
+				return _First + (current - xs_iters.first());
+			}
+		};
+
+		template<class _ContainerPointer, class _Pr = decltype(find_if_ptr_placeholder_predicate())>
+		class xscope_c_range_get_ref_if_ptr {
+		public:
+			typedef item_pointer_type_from_container_pointer<_ContainerPointer> item_pointer_type;
+			typedef mse::xscope_optional<decltype(mse::us::unsafe_make_xscope_pointer_to(*std::declval<item_pointer_type>()))> result_type;
+			result_type result;
+			xscope_c_range_get_ref_if_ptr(const _ContainerPointer& _XscpPtr, _Pr _Pred)
 				: result(eval(_XscpPtr, _Pred)) {}
 		private:
-			result_type eval(const TXScopeItemFixedConstPointer<_Container>& _XscpPtr, _Pr _Pred) {
+			static result_type eval(const _ContainerPointer& _XscpPtr, _Pr _Pred) {
 				/* Note that since we're returning a (wrapped const) reference, we need to be careful that it refers to an
 				element in the original container, not an (ephemeral) copy. */
-				auto xscope_begin_cit = mse::make_xscope_begin_const_iterator(_XscpPtr);
-				auto xscope_end_cit = mse::make_xscope_end_const_iterator(_XscpPtr);
-				auto res_cit = std::find_if(xscope_begin_cit, xscope_end_cit, _Pred);
-				if (xscope_end_cit == res_cit) {
+				const auto xs_iters = TXScopeRangeIterProvider<_ContainerPointer>(_XscpPtr);
+				auto res_it = c_find_if_ptr<decltype(xs_iters.begin()), _Pr>(xs_iters.begin(), xs_iters.end(), _Pred).result;
+				if (xs_iters.end() == res_it) {
 					return result_type{};
 				}
 				else {
-					return result_type(mse::us::unsafe_make_xscope_const_pointer_to(*res_cit));
+					return result_type(mse::us::unsafe_make_xscope_pointer_to(*res_it));
 				}
 			}
 		};
 
-		template<class _Container, class _Pr>
-		class xscope_c_ra_const_find_if_adapter {
+		template<class _ContainerPointer, class _Pr = decltype(find_if_ptr_placeholder_predicate())>
+		class xscope_c_range_get_ref_to_element_known_to_be_present_ptr {
 		public:
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef mse::xscope_optional<TXScopeItemFixedConstPointer<element_t> > result_type;
+			typedef item_pointer_type_from_container_pointer<_ContainerPointer> item_pointer_type;
+			typedef decltype(mse::us::unsafe_make_xscope_pointer_to(*std::declval<item_pointer_type>())) result_type;
 			result_type result;
-
-			typedef TXScopeItemFixedConstPointer<_Container> container_pointer_t;
-			xscope_c_ra_const_find_if_adapter(const container_pointer_t& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_if<_Container, _Pr>(_XscpPtr, _Pred).result) {}
-			explicit xscope_c_ra_const_find_if_adapter(const TXScopeItemFixedPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_if<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-#ifndef MSE_SCOPEPOINTER_DISABLED
-			explicit xscope_c_ra_const_find_if_adapter(const TXScopeFixedConstPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_if<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-			explicit xscope_c_ra_const_find_if_adapter(const TXScopeFixedPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_if<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-#endif //!MSE_SCOPEPOINTER_DISABLED
-		};
-
-		template<class _Container, class _Pr>
-		class xscope_c_ra_const_find_element_known_to_be_present {
-		public:
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef TXScopeItemFixedConstPointer<element_t> result_type;
-			result_type result;
-
-			typedef TXScopeItemFixedConstPointer<_Container> container_pointer_t;
-			xscope_c_ra_const_find_element_known_to_be_present(const container_pointer_t& _XscpPtr, _Pr _Pred)
+			xscope_c_range_get_ref_to_element_known_to_be_present_ptr(const _ContainerPointer& _XscpPtr, _Pr _Pred)
 				: result(eval(_XscpPtr, _Pred)) {}
 		private:
-			result_type eval(const container_pointer_t& _XscpPtr, _Pr _Pred) {
+			result_type eval(const _ContainerPointer& _XscpPtr, _Pr _Pred) {
 				/* Note that since we're returning a (const) reference, we need to be careful that it refers to an
 				element in the original container, not an (ephemeral) copy. */
-				auto xscope_begin_cit = mse::make_xscope_begin_const_iterator(_XscpPtr);
-				auto xscope_end_cit = mse::make_xscope_end_const_iterator(_XscpPtr);
-				auto res_it = std::find_if(xscope_begin_cit, xscope_end_cit, _Pred);
-				if (xscope_end_cit == res_it) {
-					MSE_THROW(std::logic_error("element not found - xscope_c_ra_const_find_element_known_to_be_present"));
+				const auto xs_iters = TXScopeRangeIterProvider<_ContainerPointer>(_XscpPtr);
+				auto res_it = c_find_if_ptr<decltype(xs_iters.begin()), _Pr>(xs_iters.begin(), xs_iters.end(), _Pred).result;
+				if (xs_iters.end() == res_it) {
+					MSE_THROW(std::logic_error("element not found - xscope_c_range_get_ref_to_element_known_to_be_present"));
 				}
 				else {
-					return mse::us::unsafe_make_xscope_const_pointer_to(*res_it);
+					return mse::us::unsafe_make_xscope_pointer_to(*res_it);
 				}
 			}
 		};
-
-		template<class _Container, class _Pr>
-		class xscope_c_ra_const_find_element_known_to_be_present_adapter {
-		public:
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef TXScopeItemFixedConstPointer<element_t> result_type;
-			result_type result;
-
-			typedef TXScopeItemFixedConstPointer<_Container> container_pointer_t;
-			xscope_c_ra_const_find_element_known_to_be_present_adapter(const container_pointer_t& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_element_known_to_be_present<_Container, _Pr>(_XscpPtr, _Pred).result) {}
-			explicit xscope_c_ra_const_find_element_known_to_be_present_adapter(const TXScopeItemFixedPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_element_known_to_be_present<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-#ifndef MSE_SCOPEPOINTER_DISABLED
-			explicit xscope_c_ra_const_find_element_known_to_be_present_adapter(const TXScopeFixedConstPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_element_known_to_be_present<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-			explicit xscope_c_ra_const_find_element_known_to_be_present_adapter(const TXScopeFixedPointer<_Container>& _XscpPtr, _Pr _Pred)
-				: result(xscope_c_ra_const_find_element_known_to_be_present<_Container, _Pr>(container_pointer_t(_XscpPtr), _Pred).result) {}
-#endif //!MSE_SCOPEPOINTER_DISABLED
-		};
 	}
+	template<class _InIt> using find_if_ptr_type = typename impl::c_find_if_ptr<_InIt>::item_pointer_type;
+	template<class _InIt, class _Pr>
+	inline _InIt find_if_ptr(const _InIt& _First, const _InIt& _Last, _Pr _Pred) {
+		return impl::c_find_if_ptr<_InIt, _Pr>(_First, _Last, _Pred).result;
+	}
+
 	template<class _InIt, class _Pr>
 	inline _InIt find_if(const _InIt& _First, const _InIt& _Last, _Pr _Pred) {
-		return impl::c_find_if<_InIt, _Pr>(_First, _Last, _Pred).result;
+		auto pred2 = [&_Pred](auto ptr) { return _Pred(*ptr); };
+		return find_if_ptr(_First, _Last, pred2);
+	}
+
+	/* This function returns a (scope) optional that contains a scope pointer to the found element. */
+	template<class _XScopeContainerPointer> using xscope_range_get_ref_if_ptr_type = typename impl::xscope_c_range_get_ref_if_ptr<_XScopeContainerPointer>::item_pointer_type;
+	template<class _XScopeContainerPointer, class _Pr>
+	inline auto xscope_range_get_ref_if_ptr(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
+		return impl::xscope_c_range_get_ref_if_ptr<_XScopeContainerPointer, _Pr>(_XscpPtr, _Pred).result;
 	}
 
 	/* This function returns a (scope) optional that contains a scope pointer to the found element. */
 	template<class _XScopeContainerPointer, class _Pr>
-	inline auto xscope_ra_const_find_if(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
-		typedef typename std::remove_reference<decltype(*std::declval<_XScopeContainerPointer>())>::type _Container;
-		return impl::xscope_c_ra_const_find_if_adapter<_Container, _Pr>(_XscpPtr, _Pred).result;
+	inline auto xscope_range_get_ref_if(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
+		auto pred2 = [&_Pred](auto ptr) { return _Pred(*ptr); };
+		return xscope_range_get_ref_if_ptr(_XscpPtr, pred2);
+	}
+
+	/* This function returns a scope pointer to the element. (Or throws an exception if it a suitable element isn't found.) */
+	template<class _XScopeContainerPointer> using xscope_range_get_ref_to_element_known_to_be_present_ptr_type = typename impl::xscope_c_range_get_ref_to_element_known_to_be_present_ptr<_XScopeContainerPointer>::item_pointer_type;
+	template<class _XScopeContainerPointer, class _Pr>
+	inline auto xscope_range_get_ref_to_element_known_to_be_present_ptr(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
+		return impl::xscope_c_range_get_ref_to_element_known_to_be_present_ptr<_XScopeContainerPointer, _Pr>(_XscpPtr, _Pred).result;
 	}
 
 	/* This function returns a scope pointer to the element. (Or throws an exception if it a suitable element isn't found.) */
 	template<class _XScopeContainerPointer, class _Pr>
-	inline auto xscope_ra_const_find_element_known_to_be_present(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
-		typedef typename std::remove_reference<decltype(*std::declval<_XScopeContainerPointer>())>::type _Container;
-		return impl::xscope_c_ra_const_find_element_known_to_be_present_adapter<_Container, _Pr>(_XscpPtr, _Pred).result;
+	inline auto xscope_range_get_ref_to_element_known_to_be_present(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
+		auto pred2 = [&_Pred](auto ptr) { return _Pred(*ptr); };
+		return xscope_range_get_ref_to_element_known_to_be_present_ptr(_XscpPtr, pred2);
+	}
+
+	/* deprecated alias */
+	template<class _XScopeContainerPointer, class _Pr>
+	inline auto xscope_ra_const_find_if(const _XScopeContainerPointer& _XscpPtr, _Pr _Pred) {
+		return xscope_range_get_ref_if(_XscpPtr, _Pred);
+	}
+
+	/* for_each() */
+
+	namespace impl {
+		inline auto for_each_ptr_placeholder_function() {
+			auto retval = [](auto) {};
+			return retval;
+		};
+		template<class _InIt, class _Fn = decltype(for_each_ptr_placeholder_function())>
+		class c_for_each_ptr {
+		public:
+			typedef item_pointer_type_from_iterator<_InIt> item_pointer_type;
+			typedef _Fn result_type;
+			result_type result;
+			c_for_each_ptr(const _InIt& _First, const _InIt& _Last, _Fn _Func) : result(eval(_First, _Last, _Func)) {}
+		private:
+			static result_type eval(const _InIt& _First, const _InIt& _Last, _Fn _Func) {
+				const auto xs_iters = TXScopeSpecializedFirstAndLast<_InIt>(_First, _Last);
+				auto current = xs_iters.first();
+				for (; current != xs_iters.last(); ++current) {
+					_Func(current);
+				}
+				return (_Func);
+			}
+		};
+
+		template<class _ContainerPointer, class _Fn = decltype(for_each_ptr_placeholder_function())>
+		class xscope_c_range_for_each_ptr {
+		public:
+			typedef item_pointer_type_from_container_pointer<_ContainerPointer> item_pointer_type;
+			typedef _Fn result_type;
+			result_type result;
+			xscope_c_range_for_each_ptr(const _ContainerPointer& _XscpPtr, _Fn _Func)
+				: result(eval(_XscpPtr, _Func)) {}
+		private:
+			result_type eval(const _ContainerPointer& _XscpPtr, _Fn _Func) {
+				const auto xs_iters = TXScopeRangeIterProvider<_ContainerPointer>(_XscpPtr);
+				return c_for_each_ptr<decltype(xs_iters.begin()), _Fn>(xs_iters.begin(), xs_iters.end(), _Func).result;
+			}
+		};
+	}
+	template<class _InIt> using for_each_ptr_type = typename impl::c_for_each_ptr<_InIt>::item_pointer_type;
+	template<class _InIt, class _Fn>
+	inline auto for_each_ptr(const _InIt& _First, const _InIt& _Last, _Fn _Func) {
+		return impl::c_for_each_ptr<_InIt, _Fn>(_First, _Last, _Func).result;
+	}
+
+	template<class _InIt, class _Fn>
+	inline auto for_each(const _InIt& _First, const _InIt& _Last, _Fn _Func) {
+		auto func2 = [&_Func](auto ptr) { _Func(*ptr); };
+		for_each_ptr(_First, _Last, func2);
+		return (_Func);
+	}
+
+	template<class _XScopeContainerPointer> using xscope_range_for_each_ptr_type = typename impl::xscope_c_range_for_each_ptr<_XScopeContainerPointer>::item_pointer_type;
+	template<class _XScopeContainerPointer, class _Fn>
+	inline auto xscope_range_for_each_ptr(const _XScopeContainerPointer& _XscpPtr, _Fn _Func) {
+		return impl::xscope_c_range_for_each_ptr<_XScopeContainerPointer, _Fn>(_XscpPtr, _Func).result;
+	}
+
+	template<class _XScopeContainerPointer, class _Fn>
+	inline auto xscope_range_for_each(const _XScopeContainerPointer& _XscpPtr, _Fn _Func) {
+		auto func2 = [&_Func](auto ptr) { _Func(*ptr); };
+		xscope_range_for_each_ptr(_XscpPtr, func2);
+		return (_Func);
+	}
+
+	/* sort() */
+
+	namespace impl {
+		template<class _RanIt>
+		class c_sort {
+		public:
+			c_sort(const _RanIt& _First, const _RanIt& _Last) { eval(_First, _Last); }
+		private:
+			static void eval(const _RanIt& _First, const _RanIt& _Last) {
+				const auto xs_iters = TXScopeSpecializedFirstAndLast<_RanIt>(_First, _Last);
+				std::sort(xs_iters.first(), xs_iters.first());
+			}
+		};
+
+		template<class _ContainerPointer>
+		class xscope_c_range_sort {
+		public:
+			xscope_c_range_sort(const _ContainerPointer& _XscpPtr) { eval(_XscpPtr); }
+		private:
+			static void eval(const _ContainerPointer& _XscpPtr) {
+				const auto xs_iters = TXScopeRangeIterProvider<_ContainerPointer>(_XscpPtr);
+				std::sort(xs_iters.begin(), xs_iters.end());
+			}
+		};
+	}
+	template<class _RanIt>
+	inline void sort(const _RanIt& _First, const _RanIt& _Last) {
+		impl::c_sort<_RanIt>(_First, _Last);
+	}
+
+	template<class _XScopeContainerPointer>
+	inline void xscope_range_sort(const _XScopeContainerPointer& _XscpPtr) {
+		auto tmp_vexing_parse = impl::xscope_c_range_sort<_XScopeContainerPointer>(_XscpPtr);
 	}
 
 
+	/* equal() */
+
 	namespace impl {
-
-		/* Some implementation specializations for nii_array<>.  */
-
-		template<class _Pr, class _Ty, size_t _Size, class _TStateMutex>
-		class c_find_if<Tnii_array_xscope_ss_const_iterator_type<_Ty, _Size, _TStateMutex>, _Pr> {
-		public:
-			typedef Tnii_array_xscope_ss_const_iterator_type<_Ty, _Size, _TStateMutex> _InIt;
-			typedef decltype(std::find_if(std::declval<_InIt>(), std::declval<_InIt>(), std::declval<_Pr>())) result_type;
-			result_type result;
-			c_find_if(const _InIt& _First, const _InIt& _Last, _Pr _Pred)
-				: result(eval(_First, _Last, _Pred)) {}
-		private:
-			auto eval(const _InIt& _First, const _InIt& _Last, _Pr _Pred) {
-				auto raw_pair = us::iterator_pair_to_raw_pointers_checked(_First, _Last);
-				/* If (_Last <= _First) the returned raw pointers will both have nullptr value. The C++ spec suggests this'll
-				work just fine. Apparently. */
-				auto raw_result = std::find_if(raw_pair.first, raw_pair.second, _Pred);
-				return _First + (raw_result - raw_pair.first);
+		/* This is just because msvc complains about std::equal() being unsafe. */
+		template<class _InIt1, class _InIt2>
+		bool m_equal(_InIt1 _First1, const _InIt1& _Last1, _InIt2 _First2) {
+#ifdef _MSC_VER
+			while (_First1 != _Last1) {
+				if (!(*_First1 == *_First2)) {
+					return false;
+				}
+				++_First1; ++_First2;
 			}
+			return true;
+#else // _MSC_VER
+			return std::equal(_First1, _Last1, _First2);
+#endif // _MSC_VER
+		}
+
+		template<class _InIt1, class _InIt2>
+		class c_equal {
+		public:
+			typedef decltype(m_equal(std::declval<_InIt1>(), std::declval<_InIt1>(), std::declval<_InIt2>())) result_type;
+			result_type result;
+			c_equal(const _InIt1& _First1, const _InIt1& _Last1, _InIt2 _First2) : result(m_equal(_First1, _Last1, _First2)) {}
 		};
 
-		template<class _Pr, class _Ty, size_t _Size, class _TStateMutex>
-		class xscope_c_ra_const_find_if<nii_array<_Ty, _Size, _TStateMutex>, _Pr> {
+		template<class _ContainerPointer, class _InIt2>
+		class xscope_c_range_equal {
 		public:
-			typedef nii_array<_Ty, _Size, _TStateMutex> _Container;
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef mse::xscope_optional<TXScopeItemFixedConstPointer<element_t> > result_type;
+			typedef bool result_type;
 			result_type result;
-
-			typedef TXScopeItemFixedConstPointer<nii_array<_Ty, _Size, _TStateMutex> > container_pointer_t;
-			xscope_c_ra_const_find_if(const container_pointer_t& _XscpPtr, _Pr _Pred)
-				: result(eval(_XscpPtr, _Pred)) {}
+			xscope_c_range_equal(const _ContainerPointer& _XscpPtr, _InIt2 _First2)
+				: result(eval(_XscpPtr, _First2)) {}
 		private:
-			result_type eval(const container_pointer_t& _XscpPtr, _Pr _Pred) {
-				/* Note that since we're returning a (wrapped const) reference, we need to be careful that it refers to an
-				element in the original container, not an (ephemeral) copy. */
-				const auto& array1 = (*_XscpPtr);
-				if (0 >= array1.size()) {
-					return result_type{};
-				}
-				else {
-					auto raw_begin_cit = std::addressof(array1[0]);
-					auto raw_end_cit = raw_begin_cit + msear_as_a_size_t(array1.size());
-					auto raw_result_cit = std::find_if(raw_begin_cit, raw_end_cit, _Pred);
-					if (raw_end_cit == raw_result_cit) {
-						return result_type{};
-					}
-					else {
-						return result_type(mse::us::unsafe_make_xscope_const_pointer_to(*raw_result_cit));
-					}
-				}
+			result_type eval(const _ContainerPointer& _XscpPtr, _InIt2 _First2) {
+				auto xs_iters = TXScopeRangeIterProvider<_ContainerPointer>(_XscpPtr);
+				return m_equal(xs_iters.begin(), xs_iters.end(), _First2);
 			}
 		};
+	}
+	template<class _InIt1, class _InIt2>
+	inline _InIt1 equal(const _InIt1& _First1, const _InIt1& _Last1, _InIt2 _First2) {
+		return impl::c_equal<_InIt1, _InIt2>(_First1, _Last1, _First2).result;
+	}
 
-		template<class _Pr, class _Ty, size_t _Size, class _TStateMutex>
-		class xscope_c_ra_const_find_element_known_to_be_present<nii_array<_Ty, _Size, _TStateMutex>, _Pr> {
-		public:
-			typedef nii_array<_Ty, _Size, _TStateMutex> _Container;
-			typedef typename std::remove_reference<decltype(std::declval<const _Container>()[0])>::type element_t;
-			typedef TXScopeItemFixedConstPointer<element_t> result_type;
-			result_type result;
-
-			typedef TXScopeItemFixedConstPointer<_Container> container_pointer_t;
-			xscope_c_ra_const_find_element_known_to_be_present(const container_pointer_t& _XscpPtr, _Pr _Pred)
-				: result(eval(_XscpPtr, _Pred)) {}
-		private:
-			result_type eval(const container_pointer_t& _XscpPtr, _Pr _Pred) {
-				/* Note that since we're returning a (const) reference, we need to be careful that it refers to an
-				element in the original container, not an (ephemeral) copy. */
-				const auto& array1 = (*_XscpPtr);
-				if (0 >= array1.size()) {
-					MSE_THROW(std::logic_error("element not found - xscope_c_ra_const_find_element_known_to_be_present"));
-				}
-				else {
-					auto raw_begin_cit = std::addressof(array1[0]);
-					auto raw_end_cit = raw_begin_cit + msear_as_a_size_t(array1.size());
-					auto raw_result_cit = std::find_if(raw_begin_cit, raw_end_cit, _Pred);
-					if (raw_end_cit == raw_result_cit) {
-						MSE_THROW(std::logic_error("element not found - xscope_c_ra_const_find_element_known_to_be_present"));
-					}
-					else {
-						return mse::us::unsafe_make_xscope_const_pointer_to(*raw_result_cit);
-					}
-				}
-			}
-		};
+	template<class _XScopeContainerPointer, class _InIt2>
+	inline auto xscope_range_equal(const _XScopeContainerPointer& _XscpPtr, _InIt2 _First2) {
+		return impl::xscope_c_range_equal<_XScopeContainerPointer, _InIt2>(_XscpPtr, _First2).result;
 	}
 }
 

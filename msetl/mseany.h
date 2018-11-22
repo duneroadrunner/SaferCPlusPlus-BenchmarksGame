@@ -2,6 +2,11 @@
 #ifndef MSEANY_H_
 #define MSEANY_H_
 
+/* The implementation of "any" is based on the open source one from https://github.com/thelink2012/any.
+
+Note that this (pre-C++17) implementation doesn't really support over-aligned types.
+*/
+
 //
 // Implementation of N4562 std::experimental::any (merged into C++17) for C++11 compilers.
 //
@@ -38,7 +43,16 @@ namespace mse
 		{
 			return "bad any cast";
 		}
-};
+	};
+
+	namespace us {
+		namespace impl {
+			template <typename _Ty> class TAnyPointerBaseV1;
+			template <typename _Ty> class TAnyConstPointerBaseV1;
+			template <typename _Ty> class TAnyRandomAccessIteratorBase;
+			template <typename _Ty> class TAnyRandomAccessConstIteratorBase;
+		}
+	}
 
 	class any final
 	{
@@ -171,6 +185,8 @@ namespace mse
 			}
 		}
 
+	private: // Storage and Virtual Method Table
+
 		void* storage_address() noexcept
 		{
 			return empty() ? nullptr : this->vtable->storage_address(storage);
@@ -179,8 +195,6 @@ namespace mse
 		{
 			return empty() ? nullptr : this->vtable->const_storage_address(storage);
 		}
-
-	private: // Storage and Virtual Method Table
 
 		union storage_union
 		{
@@ -401,6 +415,11 @@ namespace mse
 
 			do_construct<ValueType, T>(std::forward<ValueType>(value));
 		}
+
+		template<typename _Ty2> friend class us::impl::TAnyPointerBaseV1;
+		template<typename _Ty2> friend class us::impl::TAnyConstPointerBaseV1;
+		template<typename _Ty2> friend class us::impl::TAnyRandomAccessIteratorBase;
+		template<typename _Ty2> friend class us::impl::TAnyRandomAccessConstIteratorBase;
 	};
 
 
@@ -493,6 +512,195 @@ namespace std
 	inline void swap(mse::any& lhs, mse::any& rhs) noexcept
 	{
 		lhs.swap(rhs);
+	}
+}
+
+
+
+#include "msepointerbasics.h"
+
+namespace mse {
+
+	namespace impl {
+		template <class _TPointer>
+		bool operator_bool_helper1(std::true_type, const _TPointer& ptr_cref) {
+			return !(!ptr_cref);
+		}
+		template <class _TPointer>
+		bool operator_bool_helper1(std::false_type, const _TPointer&) {
+			/* We need to return the result of conversion to bool, but in this case the "pointer" type, _TPointer, is not convertible
+			to bool. Presumably because _TPointer is actually an iterator type. Unfortunately there isn't a good way, in general, to
+			determine if an iterator points to a valid item. */
+			assert(false);
+			return false;
+		}
+	}
+
+	namespace us {
+		namespace impl {
+			template <typename _Ty> class TAnyPointerBaseV1;
+			template <typename _Ty> class TAnyConstPointerBaseV1;
+			template <typename _Ty> using TAnyPointerBase = TAnyPointerBaseV1<_Ty>;
+			template <typename _Ty> using TAnyConstPointerBase = TAnyConstPointerBaseV1<_Ty>;
+		}
+	}
+
+	namespace us {
+		namespace impl {
+
+			template <typename _Ty>
+			class TCommonPointerInterface {
+			public:
+				virtual ~TCommonPointerInterface() {}
+				virtual _Ty& operator*() const = 0;
+				virtual _Ty* operator->() const = 0;
+				virtual operator bool() const = 0;
+			};
+
+			template <typename _Ty, typename _TPointer1>
+			class TCommonizedPointer : public TCommonPointerInterface<_Ty> {
+			public:
+				TCommonizedPointer(const _TPointer1& pointer) : m_pointer(pointer) {}
+				virtual ~TCommonizedPointer() {}
+
+				_Ty& operator*() const {
+					return (*m_pointer);
+				}
+				_Ty* operator->() const {
+					//return m_pointer.operator->();
+					return std::addressof(*m_pointer);
+				}
+				operator bool() const {
+					//return bool(m_pointer);
+					return mse::impl::operator_bool_helper1<_TPointer1>(typename std::is_convertible<_TPointer1, bool>::type(), m_pointer);
+				}
+
+				_TPointer1 m_pointer;
+			};
+
+			template <typename _Ty>
+			class TAnyPointerBaseV1 {
+			public:
+				TAnyPointerBaseV1(const TAnyPointerBaseV1& src) : m_any_pointer(src.m_any_pointer) {}
+
+				template <typename _TPointer1, class = typename std::enable_if<
+					(!std::is_convertible<_TPointer1, TAnyPointerBaseV1>::value)
+					&& (!std::is_base_of<TAnyConstPointerBase<_Ty>, _TPointer1>::value)
+					, void>::type>
+					TAnyPointerBaseV1(const _TPointer1& pointer) : m_any_pointer(TCommonizedPointer<_Ty, _TPointer1>(pointer)) {}
+
+				_Ty& operator*() const {
+					return (*(*common_pointer_interface_ptr()));
+				}
+				_Ty* operator->() const {
+					return std::addressof(*(*common_pointer_interface_ptr()));
+				}
+				template <typename _Ty2>
+				bool operator ==(const _Ty2& _Right_cref) const {
+					/* Note that both underlying stored pointers are dereferenced here and we may be relying on the intrinsic
+					safety of those pointers to ensure the safety of the dereference operations. */
+					return (std::addressof(*(*this)) == std::addressof(*_Right_cref));
+				}
+				template <typename _Ty2>
+				bool operator !=(const _Ty2& _Right_cref) const { return !((*this) == _Right_cref); }
+
+				operator bool() const {
+					return bool(*common_pointer_interface_ptr());
+				}
+
+			protected:
+				MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
+
+				const TCommonPointerInterface<_Ty>* common_pointer_interface_ptr() const {
+					auto retval = reinterpret_cast<const TCommonPointerInterface<_Ty>*>(m_any_pointer.storage_address());
+					assert(nullptr != retval);
+					return retval;
+				}
+
+				mse::any m_any_pointer;
+
+				friend class TAnyConstPointerBaseV1<_Ty>;
+			};
+		}
+	}
+
+	namespace us {
+		namespace impl {
+			template <typename _Ty>
+			class TCommonConstPointerInterface {
+			public:
+				virtual ~TCommonConstPointerInterface() {}
+				virtual const _Ty& operator*() const = 0;
+				virtual const _Ty* operator->() const = 0;
+				virtual operator bool() const = 0;
+			};
+
+			template <typename _Ty, typename _TConstPointer1>
+			class TCommonizedConstPointer : public TCommonConstPointerInterface<_Ty> {
+			public:
+				TCommonizedConstPointer(const _TConstPointer1& const_pointer) : m_const_pointer(const_pointer) {}
+				virtual ~TCommonizedConstPointer() {}
+
+				const _Ty& operator*() const {
+					return (*m_const_pointer);
+				}
+				const _Ty* operator->() const {
+					//return m_const_pointer.operator->();
+					return std::addressof(*m_const_pointer);
+				}
+				operator bool() const {
+					//return bool(m_const_pointer);
+					return mse::impl::operator_bool_helper1<_TConstPointer1>(typename std::is_convertible<_TConstPointer1, bool>::type(), m_const_pointer);
+				}
+
+				_TConstPointer1 m_const_pointer;
+			};
+
+			template <typename _Ty>
+			class TAnyConstPointerBaseV1 {
+			public:
+				TAnyConstPointerBaseV1(const TAnyConstPointerBaseV1& src) : m_any_const_pointer(src.m_any_const_pointer) {}
+				TAnyConstPointerBaseV1(const TAnyPointerBaseV1<_Ty>& src) : m_any_const_pointer(src.m_any_pointer) {}
+
+				template <typename _TPointer1, class = typename std::enable_if<
+					(!std::is_convertible<_TPointer1, TAnyConstPointerBaseV1>::value)
+					&& (!std::is_convertible<TAnyPointerBaseV1<_Ty>, _TPointer1>::value)
+					, void>::type>
+					TAnyConstPointerBaseV1(const _TPointer1& pointer) : m_any_const_pointer(TCommonizedConstPointer<_Ty, _TPointer1>(pointer)) {}
+
+				const _Ty& operator*() const {
+					return (*(*common_pointer_interface_const_ptr()));
+				}
+				const _Ty* operator->() const {
+					return std::addressof(*(*common_pointer_interface_const_ptr()));
+				}
+				operator bool() const {
+					return bool(*common_pointer_interface_const_ptr());
+				}
+				template <typename _Ty2>
+				bool operator ==(const _Ty2& _Right_cref) const {
+					/* Note that both underlying stored pointers are dereferenced here and we may be relying on the intrinsic
+					safety of those pointers to ensure the safety of the dereference operations. */
+					return (std::addressof(*(*this)) == std::addressof(*_Right_cref));
+				}
+				template <typename _Ty2>
+				bool operator !=(const _Ty2& _Right_cref) const { return !((*this) == _Right_cref); }
+
+			protected:
+				MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
+
+				const TCommonPointerInterface<_Ty>* common_pointer_interface_const_ptr() const {
+					/* This use of mse::any::storage_address() brings to mind the fact that the (pre-C++17) implementation
+					of mse::any that we're using does not support over-aligned types. (And therefore neither does this
+					template.) Though it's hard to imagine a reason why a pointer would be declared an over-aligned type. */
+					auto retval = reinterpret_cast<const TCommonPointerInterface<_Ty>*>(m_any_const_pointer.storage_address());
+					assert(nullptr != retval);
+					return retval;
+				}
+
+				mse::any m_any_const_pointer;
+			};
+		}
 	}
 }
 

@@ -4,6 +4,8 @@
 // License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
 
+/* This file and its elements are deprecated. */
+
 #pragma once
 #ifndef MSEREFCOUNTINGOFREGISTERED_H_
 #define MSEREFCOUNTINGOFREGISTERED_H_
@@ -34,17 +36,17 @@ namespace mse {
 #else /*MSE_REFCOUNTINGOFREGISTEREDPOINTER_DISABLED*/
 #endif /*MSE_REFCOUNTINGOFREGISTEREDPOINTER_DISABLED*/
 
-	template<typename _Ty> using TRefCountingOfRegisteredPointer = TRefCountingPointer<TRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredNotNullPointer = TRefCountingNotNullPointer<TRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredFixedPointer = TRefCountingFixedPointer<TRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredPointer = TRefCountingPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredNotNullPointer = TRefCountingNotNullPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredFixedPointer = TRefCountingFixedPointer<TWRegisteredObj<_Ty>>;
 
-	template<typename _Ty> using TRefCountingOfRegisteredConstPointer = TRefCountingConstPointer<TRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredNotNullConstPointer = TRefCountingNotNullConstPointer<TRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredFixedConstPointer = TRefCountingFixedConstPointer<TRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredConstPointer = TRefCountingConstPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredNotNullConstPointer = TRefCountingNotNullConstPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredFixedConstPointer = TRefCountingFixedConstPointer<TWRegisteredObj<_Ty>>;
 
 	template <class _Ty, class... Args>
 	TRefCountingOfRegisteredFixedPointer<_Ty> make_refcountingofregistered(Args&&... args) {
-		return make_refcounting<TRegisteredObj<_Ty>>(std::forward<Args>(args)...);
+		return make_refcounting<TWRegisteredObj<_Ty>>(std::forward<Args>(args)...);
 	}
 
 
@@ -57,6 +59,7 @@ namespace mse {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif /*__GNUC__*/
 #endif /*__clang__*/
 

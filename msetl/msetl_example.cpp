@@ -9,44 +9,14 @@ This example file has become quite large (and has spilled into msetl_example2.cp
 types. Your best bet is probably to use a find/search to get to the data type your interested in.
 */
 
-
-//define MSE_SAFER_SUBSTITUTES_DISABLED /* This will replace all the classes with their native/standard counterparts. */
-
-/* Each of the following will replace a subset of the classes with their native/standard counterparts. */
-//define MSE_MSTDVECTOR_DISABLED
-//define MSE_REGISTEREDPOINTER_DISABLED
-//define MSE_SAFERPTR_DISABLED /* MSE_SAFERPTR_DISABLED implies MSE_REGISTEREDPOINTER_DISABLED too. */
-//define MSE_PRIMITIVES_DISABLED
-//define MSE_REFCOUNTINGPOINTER_DISABLED
-//define MSE_SCOPEPOINTER_DISABLED
-
-/* The following adds run-time checks to scope pointers in debug mode */
-//define MSE_SCOPEPOINTER_USE_RELAXED_REGISTERED
-//define MSE_SCOPEPOINTER_RUNTIME_CHECKS_ENABLED // This adds them to non-debug modes too.
-
-/* The following will result in program termination instead of exceptions being thrown. */
-//define MSE_CUSTOM_THROW_DEFINITION(x) std::cerr << std::endl << x.what(); exit(-11)
-/* Note that MSE_CUSTOM_THROW_DEFINITION(x) can be applied on a "per header file" basis if desired. */
-
-/* The following directs the vectors and arrays to use the safe substitutes for native primitives (like int
-and size_t) in their interface and implementation. This adds a marginal increase in safety. (Mostly due to
-the interface.) */
-//define MSE_MSEVECTOR_USE_MSE_PRIMITIVES 1
-//define MSE_MSEARRAY_USE_MSE_PRIMITIVES 1
-
-/* msvc2015's incomplete support for "constexpr" means that range checks that should be done at compile time would
-be done at run time, at significant cost. So they are disabled by default for that compiler. Here we're "forcing"
-them to be enabled. */
-#define MSE_FORCE_PRIMITIVE_ASSIGN_RANGE_CHECK_ENABLED
-
-#define MSE_SELF_TESTS
+#include "msetl_example_defs.h"
 
 //include "msetl.h"
+#include "mseprimitives.h"
 #include "mseregistered.h"
-#include "mserelaxedregistered.h"
+#include "msecregistered.h"
+#include "msenorad.h"
 #include "mserefcounting.h"
-#include "mserefcountingofregistered.h"
-#include "mserefcountingofrelaxedregistered.h"
 #include "msescope.h"
 #include "mseasyncshared.h"
 #include "msepoly.h"
@@ -56,7 +26,6 @@ them to be enabled. */
 #include "msemstdvector.h"
 #include "mseivector.h"
 #include "msevector_test.h"
-#include "mseprimitives.h"
 #include "mselegacyhelpers.h"
 #include "msemstdstring.h"
 #include <algorithm>
@@ -128,20 +97,33 @@ public:
 		return (*i1ptr) + (*i2ptr);
 	}
 
-	/* This function will be used to demonstrate using us::value_from_fparam() to enable template functions to accept scope 
+	/* This function will be used to demonstrate using rsv::as_a_returnable_fparam() to enable template functions to return
+	one of their function parameters, potentially of the scope reference variety which would otherwise be rejected (with a
+	compile error) as an unsafe return value. */
+	template<class _TPointer1, class _TPointer2>
+	static auto longest(const _TPointer1& string1_xscpptr, const _TPointer2& string2_xscpptr) {
+		auto l_string1_xscpptr = mse::rsv::as_a_returnable_fparam(string1_xscpptr);
+		auto l_string2_xscpptr = mse::rsv::as_a_returnable_fparam(string2_xscpptr);
+		if (l_string1_xscpptr->length() > l_string2_xscpptr->length()) {
+			/* If string1_xscpptr were a regular TXScopeItemFixedPointer<mse::nii_string> and we tried to return it
+			directly instead of l_string1_xscpptr, it would have induced a compile error. */
+			return mse::return_value(l_string1_xscpptr);
+		}
+		else {
+			/* mse::return_value() usually returns its input argument unmolested, but in this case it will return
+			a type different from the input type. This is to prevent any function that receives this return value
+			from, in turn, returning the value, as that might be unsafe. */
+			return mse::return_value(l_string2_xscpptr);
+		}
+	}
+
+	/* This function will be used to demonstrate using rsv::as_an_fparam() to enable template functions to accept scope 
 	pointers to temporary objects. */
 	template<class _TPointer1, class _TPointer2>
 	static bool second_is_longer(const _TPointer1& string1_xscpptr, const _TPointer2& string2_xscpptr) {
-		auto l_string1_xscpptr = mse::us::value_from_fparam(string1_xscpptr);
-		auto l_string2_xscpptr = mse::us::value_from_fparam(string2_xscpptr);
+		auto l_string1_xscpptr = mse::rsv::as_an_fparam(string1_xscpptr);
+		auto l_string2_xscpptr = mse::rsv::as_an_fparam(string2_xscpptr);
 		return (l_string1_xscpptr->length() > l_string2_xscpptr->length()) ? false : true;
-	}
-
-	/* A member function that provides a safe pointer/reference to a class/struct member is going to need to
-	take a safe version of the "this" pointer as a parameter. */
-	template<class this_type>
-	static auto safe_pointer_to_member_string1(this_type safe_this) {
-		return mse::make_pointer_to_member_v2(safe_this, &H::m_string1);
 	}
 
 	mse::nii_string m_string1 = "initial text";
@@ -208,12 +190,12 @@ int main(int argc, char* argv[])
 		auto vi_it = vvi[0].begin();
 		vvi.clear();
 
-#ifndef MSE_MSTDVECTOR_DISABLED
+#if !defined(MSE_MSTDVECTOR_DISABLED) && !defined(MSE_MSTD_VECTOR_CHECK_USE_AFTER_FREE)
 		try {
-			/* At this point, the vint_type object is cleared from vvi, but it has not been deallocated/destructed yet because it
-			"knows" that there is an iterator, namely vi_it, that is still referencing it. At the moment, std::shared_ptrs are being
-			used to achieve this. */
-			auto value = (*vi_it); /* So this is actually ok. vi_it still points to a valid item. */
+			/* At this point, the vint_type object is cleared from vvi, but (with the current library implementation) it has
+			not actually been deallocated/destructed yet because it "knows" that there is an iterator, namely vi_it, that is
+			still referencing it. It will be deallocated when there are no more iterators referencing it. */
+			auto value = (*vi_it); /* In debug mode this will fail an assert. In non-debug mode it'll just work (safely). */
 			assert(5 == value);
 			vint_type vi2;
 			vi_it = vi2.begin();
@@ -221,10 +203,10 @@ int main(int argc, char* argv[])
 			references it. */
 		}
 		catch (...) {
-			/* At present, no exception will be thrown. In the future, an exception may be thrown in debug builds. */
+			/* At present, no exception will be thrown. With future library implementations, maybe. */
 			std::cerr << "potentially expected exception" << std::endl;
 		}
-#endif // !MSE_MSTDVECTOR_DISABLED
+#endif // !defined(MSE_MSTDVECTOR_DISABLED) && !defined(MSE_MSTD_VECTOR_CHECK_USE_AFTER_FREE)
 	}
 
 	{
@@ -238,16 +220,14 @@ int main(int argc, char* argv[])
 		mse::TXScopeObj<mse::mstd::vector<int>> vector1_scpobj = mse::mstd::vector<int>{ 1, 2, 3 };
 
 		/* Here we're obtaining a scope iterator to the vector. */
-		auto scp_iter1 = mse::mstd::make_xscope_iterator(&vector1_scpobj);
-		scp_iter1 = vector1_scpobj.begin();
-		auto scp_iter2 = mse::mstd::make_xscope_iterator(&vector1_scpobj);
-		scp_iter2 = vector1_scpobj.end();
+		auto scp_iter1 = mse::mstd::make_xscope_begin_iterator(&vector1_scpobj);
+		auto scp_iter2 = mse::mstd::make_xscope_end_iterator(&vector1_scpobj);
 
 		std::sort(scp_iter1, scp_iter2);
 
-		auto scp_citer3 = mse::mstd::make_xscope_const_iterator(&vector1_scpobj);
+		auto scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
 		scp_citer3 = scp_iter1;
-		scp_citer3 = vector1_scpobj.cbegin();
+		scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
 		scp_citer3 += 2;
 		auto res1 = *scp_citer3;
 		auto res2 = scp_citer3[0];
@@ -260,8 +240,7 @@ int main(int argc, char* argv[])
 		};
 		mse::TXScopeObj<CContainer1> container1_scpobj;
 		auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
-		auto scp_citer4 = mse::mstd::make_xscope_iterator(container1_m_vector_scpptr);
-		scp_citer4 = (*container1_m_vector_scpptr).begin();
+		auto scp_citer4 = mse::mstd::make_xscope_begin_iterator(container1_m_vector_scpptr);
 		scp_citer4++;
 		auto res3 = *scp_citer4;
 
@@ -351,16 +330,14 @@ int main(int argc, char* argv[])
 
 			mse::TXScopeObj<mse::us::msevector<int>> vector1_scpobj = mse::us::msevector<int>{ 1, 2, 3 };
 
-			auto scp_ss_iter1 = mse::make_xscope_iterator(&vector1_scpobj);
-			scp_ss_iter1.set_to_beginning();
-			auto scp_ss_iter2 = mse::make_xscope_iterator(&vector1_scpobj);
-			scp_ss_iter2.set_to_end_marker();
+			auto scp_ss_iter1 = mse::make_xscope_begin_iterator(&vector1_scpobj);
+			auto scp_ss_iter2 = mse::make_xscope_end_iterator(&vector1_scpobj);
 
 			std::sort(scp_ss_iter1, scp_ss_iter2);
 
-			auto scp_ss_citer3 = mse::make_xscope_const_iterator(&vector1_scpobj);
+			auto scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
 			scp_ss_citer3 = scp_ss_iter1;
-			scp_ss_citer3 = vector1_scpobj.ss_cbegin();
+			scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
 			scp_ss_citer3 += 2;
 			auto res1 = *scp_ss_citer3;
 			auto res2 = scp_ss_citer3[0];
@@ -374,7 +351,7 @@ int main(int argc, char* argv[])
 			};
 			mse::TXScopeObj<CContainer1> container1_scpobj;
 			auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
-			auto scp_ss_citer4 = mse::make_xscope_iterator(container1_m_vector_scpptr);
+			auto scp_ss_citer4 = mse::make_xscope_begin_iterator(container1_m_vector_scpptr);
 			scp_ss_citer4++;
 			auto res3 = *scp_ss_citer4;
 
@@ -448,19 +425,11 @@ int main(int argc, char* argv[])
 			auto scp_array_iter1 = mse::mstd::make_xscope_begin_iterator(&array1_scpobj);
 			auto scp_array_iter2 = mse::mstd::make_xscope_end_iterator(&array1_scpobj);
 
-			/*
-			auto scp_array_iter1 = mse::mstd::make_xscope_iterator(&array1_scpobj);
-			scp_array_iter1 = array1_scpobj.begin();
-			auto scp_array_iter2 = mse::mstd::make_xscope_iterator(&array1_scpobj);
-			scp_array_iter2 = array1_scpobj.end();
-			*/
-
 			std::sort(scp_array_iter1, scp_array_iter2);
 
 			auto scp_array_citer3 = mse::mstd::make_xscope_begin_const_iterator(&array1_scpobj);
 			scp_array_citer3 = scp_array_iter1;
 			scp_array_citer3 = mse::mstd::make_xscope_begin_const_iterator(&array1_scpobj);
-			//scp_array_citer3 = array1_scpobj.cbegin();
 			scp_array_citer3 += 2;
 			auto res1 = *scp_array_citer3;
 			auto res2 = scp_array_citer3[0];
@@ -475,7 +444,6 @@ int main(int argc, char* argv[])
 			mse::TXScopeObj<CContainer1> container1_scpobj;
 			auto container1_m_array_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_array);
 			auto scp_iter4 = mse::mstd::make_xscope_begin_iterator(container1_m_array_scpptr);
-			//scp_iter4 = (*container1_m_array_scpptr).begin();
 			scp_iter4++;
 			auto res3 = *scp_iter4;
 
@@ -533,14 +501,12 @@ int main(int argc, char* argv[])
 
 			mse::TXScopeObj<mse::us::msearray<int, 3>> array1_scpobj = mse::us::msearray<int, 3>{ 1, 2, 3 };
 
-			auto scp_ss_iter1 = mse::make_xscope_iterator(&array1_scpobj);
-			scp_ss_iter1.set_to_beginning();
-			auto scp_ss_iter2 = mse::make_xscope_iterator(&array1_scpobj);
-			scp_ss_iter2.set_to_end_marker();
+			auto scp_ss_iter1 = mse::make_xscope_begin_iterator(&array1_scpobj);
+			auto scp_ss_iter2 = mse::make_xscope_end_iterator(&array1_scpobj);
 
 			std::sort(scp_ss_iter1, scp_ss_iter2);
 
-			auto scp_ss_citer3 = mse::make_xscope_const_iterator(&array1_scpobj);
+			auto scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&array1_scpobj);
 			scp_ss_citer3 = scp_ss_iter1;
 			scp_ss_citer3 = array1_scpobj.ss_cbegin();
 			scp_ss_citer3 += 2;
@@ -556,7 +522,7 @@ int main(int argc, char* argv[])
 			};
 			mse::TXScopeObj<CContainer1> container1_scpobj;
 			auto container1_m_array_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_array);
-			auto scp_ss_citer4 = mse::make_xscope_iterator(container1_m_array_scpptr);
+			auto scp_ss_citer4 = mse::make_xscope_begin_iterator(container1_m_array_scpptr);
 			scp_ss_citer4++;
 			auto res3 = *scp_ss_citer4;
 
@@ -582,7 +548,7 @@ int main(int argc, char* argv[])
 		implicitly converted to unsigned. msetl provides substitutes for size_t and int that change the implicit conversion to
 		instead be from unsigned to signed. */
 
-		mse::CPrimitivesTest1::s_test1();
+		mse::self_test::CPrimitivesTest1::s_test1();
 
 #ifndef MSE_PRIMITIVES_DISABLED
 		{
@@ -779,9 +745,6 @@ int main(int argc, char* argv[])
 			/* The next commented out line of code is not going to work because D's base class object is not a
 			registered object. */
 			//mse::TRegisteredPointer<A> A_registered_ptr5 = D_registered_ptr1;
-
-			/* Note that unlike registered pointers, relaxed registered pointers can point to base class objects
-			that are not relaxed registered objects. */
 		}
 		{
 			/* Obtaining safe pointers to members of registered objects: */
@@ -805,7 +768,7 @@ int main(int argc, char* argv[])
 			auto s2_safe_const_ptr1 = mse::make_const_pointer_to_member_v2(E_registered_ptr1, &E::s2);
 
 			/* The return type of mse::make_pointer_to_member_v2() depends on the type of the parameters passed
-			to it. In this case, the type of s2_safe_ptr1 is mse::TSyncWeakFixedPointer<std::string, 
+			to it. In this case, the type of s2_safe_ptr1 is mse::TSyncWeakFixedPointer<std::string,
 			mse::TRegisteredPointer<E>>. s2_safe_ptr1 here is essentially a pointer to "E.s2"
 			(string member of class E) with a registered pointer to E to in its pocket. It uses the registered
 			pointer to ensure that it is safe to access the object. */
@@ -816,341 +779,95 @@ int main(int argc, char* argv[])
 		}
 
 		{
-			/***********************************/
-			/*   TRelaxedRegisteredPointer   */
-			/***********************************/
-
-			/* mse::TRelaxedRegisteredPointer<> behaves very similar to mse::TRegisteredPointer<> but is even more "compatible"
-			with native pointers (i.e. less explicit casting is required when interacting with native pointers and native pointer
-			interfaces). So if you're updating existing or legacy code to be safer, replacing native pointers with
-			mse::TRelaxedRegisteredPointer<> may be more convenient than mse::TRegisteredPointer<>.
-			One case where you may need to use mse::TRelaxedRegisteredPointer<> even when not dealing with legacy code is when
-			you need a reference to a class before it is fully defined. For example, when you have two classes that mutually
-			reference each other. mse::TRegisteredPointer<> does not support this.
-			*/
+			/***************************/
+			/*   TCRegisteredPointer   */
+			/***************************/
 
 			class C;
 
 			class D {
 			public:
 				virtual ~D() {}
-				mse::TRelaxedRegisteredPointer<C> m_c_ptr;
+				mse::TCRegisteredPointer<C> m_c_ptr;
 			};
 
 			class C {
 			public:
-				mse::TRelaxedRegisteredPointer<D> m_d_ptr;
+				mse::TCRegisteredPointer<D> m_d_ptr;
 			};
 
-			mse::TRelaxedRegisteredObj<C> regobjfl_c;
-			mse::TRelaxedRegisteredPointer<D> d_ptr = mse::relaxed_registered_new<D>();
+			mse::TCRegisteredObj<C> regobjfl_c;
+			mse::TCRegisteredPointer<D> d_ptr = mse::cregistered_new<D>();
 
 			regobjfl_c.m_d_ptr = d_ptr;
 			d_ptr->m_c_ptr = &regobjfl_c;
 
-			mse::relaxed_registered_delete<D>(d_ptr);
+			mse::cregistered_delete<D>(d_ptr);
 
 			{
 				/* Polymorphic conversions. */
-				class FD : public mse::TRelaxedRegisteredObj<D> {};
-				mse::TRelaxedRegisteredObj<FD> relaxedregistered_fd;
-				mse::TRelaxedRegisteredPointer<FD> FD_relaxedregistered_ptr1 = &relaxedregistered_fd;
-				mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr4 = FD_relaxedregistered_ptr1;
-				D_relaxedregistered_ptr4 = &relaxedregistered_fd;
-				mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr1 = &relaxedregistered_fd;
-				mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr1 = &relaxedregistered_fd;
-
-				/* Polymorphic conversions that would not be supported by mse::TRegisteredPointer. */
-				class GD : public D {};
-				mse::TRelaxedRegisteredObj<GD> relaxedregistered_gd;
-				mse::TRelaxedRegisteredPointer<GD> GD_relaxedregistered_ptr1 = &relaxedregistered_gd;
-				mse::TRelaxedRegisteredPointer<D> D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
-				D_relaxedregistered_ptr5 = GD_relaxedregistered_ptr1;
-				mse::TRelaxedRegisteredFixedPointer<GD> GD_relaxedregistered_fptr1 = &relaxedregistered_gd;
-				D_relaxedregistered_ptr5 = &relaxedregistered_gd;
-				mse::TRelaxedRegisteredFixedPointer<D> D_relaxedregistered_fptr2 = &relaxedregistered_gd;
-				mse::TRelaxedRegisteredFixedConstPointer<D> D_relaxedregistered_fcptr2 = &relaxedregistered_gd;
+				class FD : public mse::TCRegisteredObj<D> {};
+				mse::TCRegisteredObj<FD> cregistered_fd;
+				mse::TCRegisteredPointer<FD> FD_cregistered_ptr1 = &cregistered_fd;
+				mse::TCRegisteredPointer<D> D_cregistered_ptr4 = FD_cregistered_ptr1;
+				D_cregistered_ptr4 = &cregistered_fd;
+				mse::TCRegisteredFixedPointer<D> D_cregistered_fptr1 = &cregistered_fd;
+				mse::TCRegisteredFixedConstPointer<D> D_cregistered_fcptr1 = &cregistered_fd;
 			}
 		}
 
-		mse::CRegPtrTest1::s_test1();
-		mse::CRelaxedRegPtrTest1::s_test1();
+		mse::self_test::CRegPtrTest1::s_test1();
+		mse::self_test::CCRegPtrTest1::s_test1();
+	}
+
+	{
+		/*********************/
+		/*   TNoradPointer   */
+		/*********************/
+
+		/* mse::TNoradPointer<>, like mse::TCRegisteredPointer<>, behaves similar to native pointers. But where registered
+		pointers are automatically set to nullptr when their target is destroyed, the destruction of an object while a "norad"
+		pointer is targeting it results in program termination. This drastic consequence allows norad pointers' run-time
+		safety mechanism to be very lightweight (compared to that of registered pointers).
+		*/
+
+		class C;
+
+		class D {
+		public:
+			virtual ~D() {}
+			mse::TNoradPointer<C> m_c_ptr;
+		};
+
+		class C {
+		public:
+			mse::TNoradPointer<D> m_d_ptr;
+		};
+
+		mse::TNoradObj<C> noradobj_c;
+		mse::TNoradPointer<D> d_ptr = mse::norad_new<D>();
+
+		noradobj_c.m_d_ptr = d_ptr;
+		d_ptr->m_c_ptr = &noradobj_c;
+
+		/* We must make sure that there are no other references to the target of d_ptr before deleting it. Registered pointers don't
+		have the same requirement. */
+		noradobj_c.m_d_ptr = nullptr;
+
+		mse::norad_delete<D>(d_ptr);
 
 		{
-			/*************************/
-			/*   Simple Benchmarks   */
-			/*************************/
-
-			/* Just some simple speed tests. */
-			class CE {
-			public:
-				CE() {}
-				CE(int& count_ref) : m_count_ptr(&count_ref) { (*m_count_ptr) += 1; }
-				virtual ~CE() { (*m_count_ptr) -= 1; }
-				int m_x;
-				int *m_count_ptr;
-			};
-#ifndef NDEBUG
-			static const int number_of_loops = 10/*arbitrary*/;
-#else // !NDEBUG
-			static const int number_of_loops = 1000000/*arbitrary*/;
-#endif // !NDEBUG
-			std::cout << std::endl;
-			std::cout << "Some simple benchmarks: \n";
-			std::cout << "number of loops: " << number_of_loops << " \n" << " \n";
-			{
-				int count = 0;
-				auto item_ptr2 = new CE(count);
-				delete item_ptr2; item_ptr2 = nullptr;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				for (int i = 0; i < number_of_loops; i += 1) {
-					auto item_ptr = new CE(count);
-					item_ptr2 = item_ptr;
-					delete item_ptr;
-					item_ptr = nullptr;
-				}
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "native pointer: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				int count = 0;
-				mse::TRegisteredPointer<CE> item_ptr2 = mse::registered_new<CE>(count);
-				mse::registered_delete<CE>(item_ptr2);
-				auto t1 = std::chrono::high_resolution_clock::now();
-				for (int i = 0; i < number_of_loops; i += 1) {
-					mse::TRegisteredPointer<CE> item_ptr = mse::registered_new<CE>(count);
-					item_ptr2 = item_ptr;
-					mse::registered_delete<CE>(item_ptr);
-				}
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRegisteredPointer: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				int count = 0;
-				mse::TRelaxedRegisteredPointer<CE> item_ptr2 = mse::relaxed_registered_new<CE>(count);
-				mse::relaxed_registered_delete<CE>(item_ptr2);
-				auto t1 = std::chrono::high_resolution_clock::now();
-				for (int i = 0; i < number_of_loops; i += 1) {
-					mse::TRelaxedRegisteredPointer<CE> item_ptr = mse::relaxed_registered_new<CE>(count);
-					item_ptr2 = item_ptr;
-					mse::relaxed_registered_delete<CE>(item_ptr);
-				}
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRelaxedRegisteredPointer: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				int count = 0;
-				auto item_ptr2 = std::make_shared<CE>(count);
-				auto t1 = std::chrono::high_resolution_clock::now();
-				for (int i = 0; i < number_of_loops; i += 1) {
-					auto item_ptr = std::make_shared<CE>(count);
-					item_ptr2 = item_ptr;
-					item_ptr = nullptr;
-				}
-				item_ptr2 = nullptr;
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "std::shared_ptr: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				int count = 0;
-				mse::TRegisteredObj<CE> place_holder1(count);
-				mse::TRegisteredPointer<CE> item_ptr2 = &place_holder1;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				{
-					for (int i = 0; i < number_of_loops; i += 1) {
-						mse::TRegisteredObj<CE> object(count);
-						mse::TRegisteredPointer<CE> item_ptr = &object;
-						item_ptr2 = item_ptr;
-					}
-				}
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRegisteredPointer targeting the stack: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				int count = 0;
-				mse::TRefCountingPointer<CE> item_ptr2 = mse::make_refcounting<CE>(count);
-				auto t1 = std::chrono::high_resolution_clock::now();
-				for (int i = 0; i < number_of_loops; i += 1) {
-					mse::TRefCountingPointer<CE> item_ptr = mse::make_refcounting<CE>(count);
-					item_ptr2 = item_ptr;
-					item_ptr = nullptr;
-				}
-				item_ptr2 = nullptr;
-
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRefCountingPointer: " << time_span.count() << " seconds.";
-				if (0 != count) {
-					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
-				}
-				std::cout << std::endl;
-			}
-
-			std::cout << std::endl;
-			static const int number_of_loops2 = (10/*arbitrary*/)*number_of_loops;
-			{
-				class CF {
-				public:
-					CF(int a = 0) : m_a(a) {}
-					CF* m_next_item_ptr;
-					int m_a = 3;
-				};
-				CF item1(1);
-				CF item2(2);
-				CF item3(3);
-				item1.m_next_item_ptr = &item2;
-				item2.m_next_item_ptr = &item3;
-				item3.m_next_item_ptr = &item1;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				CF* cf_ptr = item1.m_next_item_ptr;
-				for (int i = 0; i < number_of_loops2; i += 1) {
-					cf_ptr = cf_ptr->m_next_item_ptr;
-				}
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "native pointer dereferencing: " << time_span.count() << " seconds.";
-				if (3 == cf_ptr->m_a) {
-					std::cout << " "; /* Using cf_ptr->m_a for (potential) output should prevent the optimizer from discarding too much. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				class CF {
-				public:
-					CF(int a = 0) : m_a(a) {}
-					mse::TRelaxedRegisteredPointer<CF> m_next_item_ptr;
-					int m_a = 3;
-				};
-				mse::TRelaxedRegisteredObj<CF> item1(1);
-				mse::TRelaxedRegisteredObj<CF> item2(2);
-				mse::TRelaxedRegisteredObj<CF> item3(3);
-				item1.m_next_item_ptr = &item2;
-				item2.m_next_item_ptr = &item3;
-				item3.m_next_item_ptr = &item1;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				mse::TRelaxedRegisteredPointer<CF>* rpfl_ptr = std::addressof(item1.m_next_item_ptr);
-				for (int i = 0; i < number_of_loops2; i += 1) {
-					rpfl_ptr = std::addressof((*rpfl_ptr)->m_next_item_ptr);
-				}
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRelaxedRegisteredPointer (checked) dereferencing: " << time_span.count() << " seconds.";
-				if (3 == (*rpfl_ptr)->m_a) {
-					std::cout << " "; /* Using rpfl_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				class CF {
-				public:
-					CF(int a = 0) : m_a(a) {}
-					mse::TRelaxedRegisteredPointer<CF> m_next_item_ptr;
-					int m_a = 3;
-				};
-				mse::TRelaxedRegisteredObj<CF> item1(1);
-				mse::TRelaxedRegisteredObj<CF> item2(2);
-				mse::TRelaxedRegisteredObj<CF> item3(3);
-				item1.m_next_item_ptr = &item2;
-				item2.m_next_item_ptr = &item3;
-				item3.m_next_item_ptr = &item1;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				CF* cf_ptr = (item1.m_next_item_ptr);
-				for (int i = 0; i < number_of_loops2; i += 1) {
-					cf_ptr = (cf_ptr->m_next_item_ptr);
-				}
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRelaxedRegisteredPointer unchecked dereferencing: " << time_span.count() << " seconds.";
-				if (3 == cf_ptr->m_a) {
-					std::cout << " "; /* Using rpfl_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				class CF {
-				public:
-					CF(int a = 0) : m_a(a) {}
-					std::weak_ptr<CF> m_next_item_ptr;
-					int m_a = 3;
-				};
-				auto item1_ptr = std::make_shared<CF>(1);
-				auto item2_ptr = std::make_shared<CF>(2);
-				auto item3_ptr = std::make_shared<CF>(3);
-				item1_ptr->m_next_item_ptr = item2_ptr;
-				item2_ptr->m_next_item_ptr = item3_ptr;
-				item3_ptr->m_next_item_ptr = item1_ptr;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				std::weak_ptr<CF>* wp_ptr = &(item1_ptr->m_next_item_ptr);
-				for (int i = 0; i < number_of_loops2; i += 1) {
-					wp_ptr = &((*wp_ptr).lock()->m_next_item_ptr);
-				}
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "std::weak_ptr dereferencing: " << time_span.count() << " seconds.";
-				if (3 == (*wp_ptr).lock()->m_a) {
-					std::cout << " "; /* Using wp_ref.lock()->m_a for (potential) output should prevent the optimizer from discarding too much. */
-				}
-				std::cout << std::endl;
-			}
-			{
-				class CF {
-				public:
-					CF(int a = 0) : m_a(a) {}
-					mse::TRefCountingPointer<CF> m_next_item_ptr;
-					int m_a = 3;
-				};
-				auto item1_ptr = mse::make_refcounting<CF>(1);
-				auto item2_ptr = mse::make_refcounting<CF>(2);
-				auto item3_ptr = mse::make_refcounting<CF>(3);
-				item1_ptr->m_next_item_ptr = item2_ptr;
-				item2_ptr->m_next_item_ptr = item3_ptr;
-				item3_ptr->m_next_item_ptr = item1_ptr;
-				auto t1 = std::chrono::high_resolution_clock::now();
-				mse::TRefCountingPointer<CF>* refc_ptr = &(item1_ptr->m_next_item_ptr);
-				for (int i = 0; i < number_of_loops2; i += 1) {
-					refc_ptr = &((*refc_ptr)->m_next_item_ptr);
-				}
-				auto t2 = std::chrono::high_resolution_clock::now();
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				std::cout << "mse::TRefCountingPointer (checked) dereferencing: " << time_span.count() << " seconds.";
-				item1_ptr->m_next_item_ptr = nullptr; /* to break the reference cycle */
-				if (3 == (*refc_ptr)->m_a) {
-					std::cout << " "; /* Using refc_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
-				}
-				std::cout << std::endl;
-			}
+			/* Polymorphic conversions. */
+			class FD : public mse::TNoradObj<D> {};
+			mse::TNoradObj<FD> norad_fd;
+			mse::TNoradPointer<FD> FD_norad_ptr1 = &norad_fd;
+			mse::TNoradPointer<D> D_norad_ptr4 = FD_norad_ptr1;
+			D_norad_ptr4 = &norad_fd;
+			mse::TNoradFixedPointer<D> D_norad_fptr1 = &norad_fd;
+			mse::TNoradFixedConstPointer<D> D_norad_fcptr1 = &norad_fd;
 		}
 	}
+	mse::self_test::CNoradPtrTest1::s_test1();
 
 #if defined(MSEREGISTEREDREFWRAPPER) && !defined(MSE_PRIMITIVES_DISABLED)
 	{
@@ -1217,8 +934,8 @@ int main(int argc, char* argv[])
 
 		/* TRefCountingPointer behaves similar to std::shared_ptr. Some differences being that it foregoes any thread safety
 		mechanisms, it does not accept raw pointer assignment or construction (use make_refcounting<>() instead), and it will throw
-		an exception on attempted nullptr dereference. And it's faster. And like TRegisteredPointer, proper "const", "not null"
-		and "fixed" (non-retargetable) versions are provided as well. */
+		an exception on attempted nullptr dereference. And it's smaller and faster. And like TRegisteredPointer, proper "const",
+		"not null" and "fixed" (non-retargetable) versions are provided as well. */
 
 		class A {
 		public:
@@ -1299,106 +1016,94 @@ int main(int argc, char* argv[])
 	}
 
 	{
-		/*************************************/
-		/*  TRefCountingOfRegisteredPointer  */
-		/*************************************/
+		/* Using registered pointers as weak pointers with reference counting pointers. */
 
-		/* TRefCountingOfRegisteredPointer is simply an alias for TRefCountingPointer<TRegisteredObj<_Ty>>. TRegisteredObj<_Ty> is
-		meant to behave much like, and be compatible with a _Ty. The reason why we might want to use it is because the &
-		("address of") operator of TRegisteredObj<_Ty> returns a TRegisteredFixedPointer<_Ty> rather than a raw pointer, and
-		TRegisteredPointers can serve as safe "weak pointers".
-		*/
+		/* TRefCountingPointer<> does not have an associated weak pointer like std::shared_ptr<> does. If you need weak
+		pointer functionality you could just resort to using std::shared_ptr<> and std::weak_ptr<>. When operating within
+		a thread, you could also use registered pointers as weak pointers for TRefCountingPointer<>, which may be
+		preferable in some cases. 
 
-		class A {
-		public:
-			A() {}
-			virtual ~A() {
-				int q = 3; /* just so you can place a breakpoint if you want */
-			}
+		Generally you're going to want to obtain a "strong" pointer from the weak pointer, so  rather than targeting the
+		registered pointer directly at the object of interest, you'd target a/the strong owning pointer of the object. */
 
-			int b = 3;
-		};
-		typedef std::vector<mse::TRefCountingOfRegisteredFixedPointer<A>> CRCRFPVector;
+		typedef mse::TRefCountingFixedPointer<std::string> str_rc_ptr_t; // owning pointer of a string
+		typedef mse::TWRegisteredObj<str_rc_ptr_t> str_rc_ptr_regobj_t; // registered version of above so that you can obtain a (weak)
+																	   // registered pointer to it
+
+		 /* str_rc_rc_ptr1 is a "shared" owner of an owning pointer of a string  */
+		auto str_rc_rc_ptr1 = mse::make_nullable_refcounting<str_rc_ptr_regobj_t>(str_rc_ptr_regobj_t(mse::make_refcounting<std::string>("some text")));
+		/* You need to double dereference it to access the string value. */
+		std::cout << **str_rc_rc_ptr1 << std::endl;
+
+		/* Here we're obtaining a (weak) registered pointer to the owning pointer of the string. */
+		auto str_rc_reg_ptr1 = &(*str_rc_rc_ptr1);
+		/* Here you also need to double dereference it to access the string value. */
+		std::cout << **str_rc_reg_ptr1 << std::endl;
 
 		{
-			CRCRFPVector rcrfpvector;
-			{
-				mse::TRefCountingOfRegisteredFixedPointer<A> A_refcountingofregisteredfixed_ptr1 = mse::make_refcountingofregistered<A>();
-				rcrfpvector.push_back(A_refcountingofregisteredfixed_ptr1);
+			/* We can obtain a (strong) owning pointer of the string from the (weak) registered pointer. */
+			auto str_rc_ptr2 = *str_rc_reg_ptr1;
 
-				/* Just to demonstrate conversion between refcountingofregistered pointer types. */
-				mse::TRefCountingOfRegisteredConstPointer<A> A_refcountingofregisteredconst_ptr1 = A_refcountingofregisteredfixed_ptr1;
-			}
-			int res1 = H::foo5(rcrfpvector.front(), rcrfpvector);
-			assert(3 == res1);
-
-#if !defined(MSE_REGISTEREDPOINTER_DISABLED)
-
-			rcrfpvector.push_back(mse::make_refcountingofregistered<A>());
-			/* The first parameter in this case will be a TRegisteredFixedPointer<A>. */
-			int res2 = H::foo5(&(*rcrfpvector.front()), rcrfpvector);
-			assert(-1 == res2);
-
-#endif // !defined(MSE_REGISTEREDPOINTER_DISABLED)
+			std::cout << *str_rc_ptr2 << std::endl;
 		}
 
-		mse::TRefCountingOfRegisteredPointer_test TRefCountingOfRegisteredPointer_test1;
-		bool TRefCountingOfRegisteredPointer_test1_res = TRefCountingOfRegisteredPointer_test1.testBehaviour();
-		TRefCountingOfRegisteredPointer_test1_res &= TRefCountingOfRegisteredPointer_test1.testLinked();
-		TRefCountingOfRegisteredPointer_test1.test1();
+		assert(str_rc_reg_ptr1); // just asserting the str_rc_reg_ptr1 is not null here
+
+		/* Here we're releasing ownership of the string owning pointer. Since this was its only owner, the string owning
+		pointer (and consequently the string) will be destroyed. */
+		str_rc_rc_ptr1 = nullptr;
+
+		assert(!str_rc_reg_ptr1); // here we're asserting that str_rc_reg_ptr1 has been (automatically) set to null
 	}
 
-#ifndef MSE_PRIMITIVES_DISABLED
 	{
-		/********************************************/
-		/*  TRefCountingOfRelaxedRegisteredPointer  */
-		/********************************************/
+		/* Here we demonstrate using TWCRegisteredPointer<> as a safe "weak_ptr" to prevent cyclic references from becoming
+		memory leaks. This isn't much different from using std::weak_ptr<> in terms of functionality, but there can be
+		performance and safety advantages. */
 
-		/* TRefCountingOfRelaxedRegisteredPointer is simply an alias for TRefCountingPointer<TRelaxedRegisteredObj<_Ty>>. TRelaxedRegisteredObj<_Ty> is
-		meant to behave much like, and be compatible with a _Ty. The reason why we might want to use it is because the &
-		("address of") operator of TRelaxedRegisteredObj<_Ty> returns a TRelaxedRegisteredFixedPointer<_Ty> rather than a raw pointer, and
-		TRelaxedRegisteredPointers can serve as safe "weak pointers".
-		*/
+		class CRCNode;
 
-		/* Here we demonstrate using TRelaxedRegisteredFixedPointer<> as a safe "weak_ptr" to prevent "cyclic references" from
-		becoming memory leaks. */
+		typedef mse::TRefCountingFixedPointer<CRCNode> rcnode_strongptr_t;			// owning pointer of a CRCNode
+		typedef mse::TWRegisteredObj<rcnode_strongptr_t> rcnode_strongptr_regobj_t; // registered version of above so that you can obtain a (weak)
+																					// registered pointer to it
+		typedef mse::TWRegisteredPointer<rcnode_strongptr_t> rcnode_strongptr_weakptr_t; // (weak) registered pointer to owning pointer of a CRCNode
+
 		class CRCNode {
 		public:
-			CRCNode(mse::TRegisteredFixedPointer<mse::CInt> node_count_ptr
-				, mse::TRelaxedRegisteredPointer<CRCNode> root_ptr) : m_node_count_ptr(node_count_ptr), m_root_ptr(root_ptr) {
+			CRCNode(mse::TRegisteredPointer<mse::CInt> node_count_ptr
+				, rcnode_strongptr_weakptr_t root_ptr_ptr) : m_node_count_ptr(node_count_ptr), m_root_ptr_ptr(root_ptr_ptr) {
 				(*node_count_ptr) += 1;
 			}
-			CRCNode(mse::TRegisteredFixedPointer<mse::CInt> node_count_ptr) : m_node_count_ptr(node_count_ptr) {
+			CRCNode(mse::TRegisteredPointer<mse::CInt> node_count_ptr) : m_node_count_ptr(node_count_ptr) {
 				(*node_count_ptr) += 1;
 			}
 			virtual ~CRCNode() {
 				(*m_node_count_ptr) -= 1;
 			}
-			static mse::TRefCountingOfRelaxedRegisteredFixedPointer<CRCNode> MakeRoot(mse::TRegisteredFixedPointer<mse::CInt> node_count_ptr) {
-				auto retval = mse::make_refcountingofrelaxedregistered<CRCNode>(node_count_ptr);
-				(*retval).m_root_ptr = &(*retval);
+			static rcnode_strongptr_regobj_t MakeRoot(mse::TRegisteredPointer<mse::CInt> node_count_ptr) {
+				auto retval = rcnode_strongptr_regobj_t{ mse::make_refcounting<CRCNode>(node_count_ptr) };
+				(*retval).m_root_ptr_ptr = &retval;
 				return retval;
 			}
-			mse::TRefCountingOfRelaxedRegisteredPointer<CRCNode> ChildPtr() const { return m_child_ptr; }
-			mse::TRefCountingOfRelaxedRegisteredFixedPointer<CRCNode> MakeChild() {
-				auto retval = mse::make_refcountingofrelaxedregistered<CRCNode>(m_node_count_ptr, m_root_ptr);
-				m_child_ptr = retval;
-				return retval;
+			auto MaybeStrongChildPtr() const { return m_maybe_child_ptr; }
+			rcnode_strongptr_regobj_t MakeChild() {
+				m_maybe_child_ptr.emplace(rcnode_strongptr_regobj_t{ mse::make_refcounting<CRCNode>(m_node_count_ptr, m_root_ptr_ptr) });
+				return m_maybe_child_ptr.value();
 			}
 			void DisposeOfChild() {
-				m_child_ptr = nullptr;
+				m_maybe_child_ptr.reset();
 			}
 
 		private:
-			mse::TRegisteredFixedPointer<mse::CInt> m_node_count_ptr;
-			mse::TRefCountingOfRelaxedRegisteredPointer<CRCNode> m_child_ptr;
-			mse::TRelaxedRegisteredPointer<CRCNode> m_root_ptr;
+			mse::TRegisteredPointer<mse::CInt> m_node_count_ptr;
+			mse::mstd::optional<rcnode_strongptr_regobj_t> m_maybe_child_ptr;
+			rcnode_strongptr_weakptr_t m_root_ptr_ptr;
 		};
 
 		mse::TRegisteredObj<mse::CInt> node_counter = 0;
 		{
-			mse::TRefCountingOfRelaxedRegisteredPointer<CRCNode> root_ptr = CRCNode::MakeRoot(&node_counter);
-			auto kid1 = root_ptr->MakeChild();
+			auto root_owner_ptr = CRCNode::MakeRoot(&node_counter);
+			auto kid1 = root_owner_ptr->MakeChild();
 			{
 				auto kid2 = kid1->MakeChild();
 				auto kid3 = kid2->MakeChild();
@@ -1408,13 +1113,7 @@ int main(int argc, char* argv[])
 			assert(2 == node_counter);
 		}
 		assert(0 == node_counter);
-
-		mse::TRefCountingOfRelaxedRegisteredPointer_test TRefCountingOfRelaxedRegisteredPointer_test1;
-		bool TRefCountingOfRelaxedRegisteredPointer_test1_res = TRefCountingOfRelaxedRegisteredPointer_test1.testBehaviour();
-		TRefCountingOfRelaxedRegisteredPointer_test1_res &= TRefCountingOfRelaxedRegisteredPointer_test1.testLinked();
-		TRefCountingOfRelaxedRegisteredPointer_test1.test1();
 	}
-#endif // !MSE_PRIMITIVES_DISABLED
 
 	{
 		/*****************************/
@@ -1448,6 +1147,7 @@ int main(int argc, char* argv[])
 
 		/* Here we're declaring a scope object. */
 		mse::TXScopeObj<A> a_scpobj(5);
+		/* note that the '&' ("ampersand") operator is overloaded to return a mse::TXScopeFixedPointer<>  */
 		int res1 = (&a_scpobj)->b;
 		int res2 = B::foo2(&a_scpobj);
 		int res3 = B::foo3(&a_scpobj);
@@ -1457,18 +1157,19 @@ int main(int argc, char* argv[])
 		int res4 = B::foo2(xscp_a_ownerptr);
 		int res4b = B::foo2(&(*xscp_a_ownerptr));
 
-		/* You can use the "mse::make_pointer_to_member_v2()" function to obtain a safe pointer to a member of
+		/* You can use the "mse::make_xscope_pointer_to_member_v2()" function to obtain a safe pointer to a member of
 		an xscope object. */
-		auto xscp_s_ptr1 = mse::make_pointer_to_member_v2((&a_scpobj), &A::s);
+		auto xscp_s_ptr1 = mse::make_xscope_pointer_to_member_v2((&a_scpobj), &A::s);
 		(*xscp_s_ptr1) = "some new text";
-		auto xscp_s_const_ptr1 = mse::make_const_pointer_to_member_v2((&a_scpobj), &A::s);
+		auto xscp_s_const_ptr1 = mse::make_xscope_const_pointer_to_member_v2((&a_scpobj), &A::s);
 
-		/* The return type of mse::make_pointer_to_member_v2() depends on the type of the parameters passed
+		/* The return type of mse::make_xscope_pointer_to_member_v2() depends on the type of the parameters passed
 		to it. In this case, the type of xscp_s_ptr1 is mse::TXScopeItemFixedPointer<A>. */
 
 		auto res5 = H::foo6(xscp_s_ptr1, xscp_s_const_ptr1);
 
-		/* Using mse::make_xscope_strong_pointer_store(), you can obtain a scope pointer from a refcounting pointer. */
+		/* Using mse::make_xscope_strong_pointer_store(), you can obtain a scope pointer from a refcounting pointer (or any other
+		"strong" pointer). */
 		/* Let's make it a const refcounting pointer, just for variety. */
 		mse::TRefCountingFixedConstPointer<A> refc_cptr1 = mse::make_refcounting<A>(11);
 		auto xscp_refc_cstore = mse::make_xscope_strong_pointer_store(refc_cptr1);
@@ -1477,27 +1178,51 @@ int main(int argc, char* argv[])
 		mse::TXScopeItemFixedConstPointer<A> xscp_cptr2 = xscp_cptr1;
 		A res7 = *xscp_cptr2;
 
-		/* Technically, you're not allowed to return a non-owning scope pointer from a function. (The return_value() function
-		wrapper enforces this.) Pretty much the only time you'd legitimately want to do this is when the returned pointer
-		is one of the input parameters. An example might be a "min(a, b)" function which takes two objects by reference and
-		returns the reference to the lesser of the two objects. The library provides the xscope_chosen_pointer() function
-		which takes a bool and two scope pointers, and returns one of the scope pointers depending on the value of the
+		/* Technically, you're not allowed to return a non-owning scope pointer (or any object containing a scope reference)
+		from a function. (The return_value() function wrapper enforces this.) Pretty much the only time you'd legitimately
+		want to do this is when the returned pointer is one of the input parameters. An example might be a "min(a, b)"
+		function which takes two objects by reference and returns the reference to the lesser of the two objects. The
+		library provides the xscope_chosen() function which takes a bool and two objects of the same type (in this case it
+		will be two scope pointers) and returns one of the objects (scope pointers), which one depending on the value of the
 		bool. You could use this function to implement the equivalent of a min(a, b) function like so: */
 		auto xscp_a_ptr5 = &a_scpobj;
 		auto xscp_a_ptr6 = &(*xscp_a_ownerptr);
-		auto xscp_min_ptr1 = mse::xscope_chosen_pointer((*xscp_a_ptr6 < *xscp_a_ptr5), xscp_a_ptr5, xscp_a_ptr6);
+		auto xscp_min_ptr1 = mse::xscope_chosen((*xscp_a_ptr6 < *xscp_a_ptr5), xscp_a_ptr5, xscp_a_ptr6);
 		assert(5 == xscp_min_ptr1->b);
 
 		{
-			/* If you find that there are cases where mse::xscope_chosen_pointer() is insufficiently convenient, a (less
-			preferred) alternative may be to use mse::us::TXScopeReturnableItemFixedPointerFParam<>, which is just a version
-			of mse::TXScopeItemFixedPointer<> that may only be used to declare function parameters and whose value can be
-			used as a function return value. (But note that the type may not be used as a return type. The type may only be
-			used as a function parameter type.) */
+			/**************************************/
+			/*  rsv::TReturnableFParam<>          */
+			/*  && rsv::as_a_returnable_fparam()  */
+			/**************************************/
+
+			/* Another alternative if you want to return a scope pointer (or any object containing a scope
+			reference) input parameter from a function is to wrap the parameter type with the
+			rsv::TXScopeReturnableFParam<> transparent template wrapper when declaring the parameter. 
+			
+			Normally the return_value() function wrapper will reject (with a compile error) scope pointers as unsafe return
+			values. But if the scope pointer type is wrapped in the rsv::TXScopeReturnableFParam<> transparent template
+			wrapper, then it will be accepted as a safe return value. Because it's generally safe to return a reference to
+			an object if that reference was passed as an input parameter. Well, as long as the object is not a temporary
+			one. So unlike with rsv::TXScopeFParam<>, scope reference types wrapped with rsv::TXScopeReturnableFParam<> will
+			not enable support for references to temporaries, as returning a (scope) reference to a temporary would be
+			unsafe even if the reference was passed as a function parameter. So for scope reference parameters you have to
+			choose between being able to use it as a return value, or supporting references to temporaries. (Or neither.)
+			
+			In the case of function templates, sometimes you want the parameter types to be auto-deduced, and use of the
+			mse::rsv::TXScopeReturnableFParam<> wrapper can interfere with that. In those cases you can instead convert
+			parameters to their wrapped type after the fact using the rsv::xscope_as_a_returnable_fparam() function.
+			Note that using this function (or the rsv::TXScopeReturnableFParam<> wrapper) on anything other than function
+			parameters is unsafe, and currently there is no compile-time enforcement of this restriction.
+
+			rsv::TReturnableFParam<> and rsv::as_a_returnable_fparam() can be used for situations when the type of the
+			input parameter is itself a template parameter and not necessarily always a scope type or treated as a scope
+			type. */
+
 			class CD {
 			public:
-				static auto longest(mse::us::TXScopeReturnableItemFixedPointerFParam<mse::nii_string> string1_xscpptr
-					, mse::us::TXScopeReturnableItemFixedPointerFParam<mse::nii_string> string2_xscpptr) {
+				static auto longest(mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedPointer<mse::nii_string> > string1_xscpptr
+					, mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedPointer<mse::nii_string> > string2_xscpptr) {
 					if (string1_xscpptr->length() > string2_xscpptr->length()) {
 						/* If string1_xscpptr were a regular TXScopeItemFixedPointer<mse::nii_string> the next line would have
 						induced a compile error. */
@@ -1505,59 +1230,79 @@ int main(int argc, char* argv[])
 					}
 					else {
 						/* mse::return_value() usually returns its input argument unmolested, but in this case it will return
-						a type different from the input type. This is to prevent any function that receives this return value
-						from, in turn, returning the value, as that might be unsafe. */
+						a type (slightly) different from the input type. This is to prevent any function that receives this
+						return value from, in turn, returning the value, as that might be unsafe. */
 						return mse::return_value(string2_xscpptr);
 					}
 				}
 			};
-
 			mse::TXScopeObj<mse::nii_string> xscope_string1 = "abc";
 			mse::TXScopeObj<mse::nii_string> xscope_string2 = "abcd";
 			auto longer_string_xscpptr = CD::longest(&xscope_string1, &xscope_string2);
 			auto copy_of_longer_string = *longer_string_xscpptr;
+
+			auto longer_string2_xscpptr = H::longest(&xscope_string1, &xscope_string2);
+
+			class CE {
+			public:
+				static auto xscope_string_const_section_to_member(mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedConstPointer<CE> > returnable_this_cpointer) {
+					/* "Pointers to members" based on returnable pointers inherit the "returnability". */
+					auto returnable_cpointer_to_member = mse::make_xscope_const_pointer_to_member_v2(returnable_this_cpointer, &CE::m_string1);
+					/* "scope nrp string const sections" based on returnable pointers (or iterators) inherit the "returnability". */
+					auto returnable_string_const_section = mse::make_xscope_nrp_string_const_section(returnable_cpointer_to_member);
+					/* Subsections of returnable sections inherit the "returnability". */
+					auto returnable_string_const_section2 = returnable_string_const_section.xscope_subsection(1, 3);
+					return mse::return_value(returnable_string_const_section2);
+				}
+			private:
+				mse::nii_string m_string1 = "abcde";
+			};
+
+			mse::TXScopeObj<CE> e_xscpobj;
+			auto xscope_string_const_section1 = mse::TXScopeObj<CE>::xscope_string_const_section_to_member(&e_xscpobj);
+			assert(xscope_string_const_section1 == "bcd");
 		}
 
 		{
-			/********************************/
-			/*  us::TFParam<>               */
-			/*  && us::value_from_fparam()  */
-			/********************************/
+			/****************************/
+			/*  rsv::TFParam<>          */
+			/*  && rsv::as_an_fparam()  */
+			/****************************/
 
-			/* us::TFParam<> is just a transparent template wrapper for function parameter declarations. In most cases
+			/* rsv::TFParam<> is just a transparent template wrapper for function parameter declarations. In most cases
 			use of this wrapper is not necessary, but in some cases it enables functionality only available to variables
-			that are function parameters. Specifically, it allows functions to support scope pointer/references to
-			temporary objects. For safety reasons, by default, scope pointer/references to temporaries are actually
-			"functionally disabled" types distinct from regular scope pointer/reference types. Because it's safe to do so
-			in the case of function parameters, the us::TFParam<> wrapper enables certain scope pointer/reference types
-			(like TXScopeItemFixedPointer<>, and "random access section" scope types) to be constructed from their
-			"functionally disabled" counterparts.
+			that are function parameters. Specifically, it allows functions to support arguments that are scope
+			pointer/references to temporary objects. For safety reasons, by default, scope pointer/references to
+			temporaries are actually "functionally disabled" types distinct from regular scope pointer/reference types.
+			Because it's safe to do so in the case of function parameters, the rsv::TFParam<> wrapper enables certain
+			scope pointer/reference types (like TXScopeItemFixedPointer<>, and "random access section" scope types) to
+			be constructed from their "functionally disabled" counterparts.
 
 			In the case of function templates, sometimes you want the parameter types to be auto-deduced, and use of the
-			mse::us::TFParam<> wrapper can interfere with that. In those cases you can instead convert parameters to their
-			wrapped type after the fact using the us::value_from_fparam() function. Note that using this function (or the
-			us::TFParam<> wrapper) on anything other than function parameters is unsafe, and currently there is no
+			mse::rsv::TFParam<> wrapper can interfere with that. In those cases you can instead convert parameters to their
+			wrapped type after-the-fact using the rsv::as_an_fparam() function. Note that using this function (or the
+			rsv::TFParam<> wrapper) on anything other than function parameters is unsafe, and currently there is no
 			compile-time enforcement of this restriction.
 
-			us::TXScopeFParam<> and us::xscope_value_from_fparam() can be used for situations when the types are necessarily
+			rsv::TXScopeFParam<> and rsv::xscope_as_an_fparam() can be used for situations when the types are necessarily
 			scope types.
 			*/
 
 			class CD {
 			public:
-				static bool second_is_longer(mse::us::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::us::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer(mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string2_xscpptr) {
 
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 
-				static bool second_is_longer_any(mse::us::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::us::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer_any(mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string2_xscpptr) {
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 
-				static bool second_is_longer_poly(mse::us::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::us::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer_poly(mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string2_xscpptr) {
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 			};
@@ -1612,7 +1357,7 @@ int main(int argc, char* argv[])
 			//*registered_ptr1;
 		}
 
-		mse::CXScpPtrTest1::s_test1();
+		mse::self_test::CXScpPtrTest1::s_test1();
 	}
 
 	{
@@ -1628,7 +1373,7 @@ int main(int argc, char* argv[])
 		mse::TXScopeObj<H> h_scpobj;
 		auto h_refcptr = mse::make_refcounting<H>();
 		mse::TRegisteredObj<H> h_regobj;
-		mse::TRelaxedRegisteredObj<H> h_rlxregobj;
+		mse::TCRegisteredObj<H> h_rlxregobj;
 
 		/* Safe iterators are a type of safe pointer too. */
 		mse::mstd::vector<H> h_mstdvec;
@@ -1646,9 +1391,9 @@ int main(int argc, char* argv[])
 
 		{
 			/* So here's how you get a safe pointer to a member of the object using mse::make_pointer_to_member_v2(). */
-			auto h_string1_scpptr = mse::make_pointer_to_member_v2(&h_scpobj, &H::m_string1);
+			auto h_string1_scpptr = mse::make_xscope_pointer_to_member_v2(&h_scpobj, &H::m_string1);
 			(*h_string1_scpptr) = "some new text";
-			auto h_string1_scp_const_ptr = mse::make_const_pointer_to_member_v2(&h_scpobj, &H::m_string1);
+			auto h_string1_scp_const_ptr = mse::make_xscope_const_pointer_to_member_v2(&h_scpobj, &H::m_string1);
 
 			auto h_string1_refcptr = mse::make_pointer_to_member_v2(h_refcptr, &H::m_string1);
 			(*h_string1_refcptr) = "some new text";
@@ -1671,321 +1416,591 @@ int main(int argc, char* argv[])
 			auto h_string1_writelock_ptr = mse::make_pointer_to_member_v2(h_writelock_ptr, &H::m_string1);
 			(*h_string1_writelock_ptr) = "some new text";
 
-			auto h_string1_stdshared_const_ptr = mse::make_pointer_to_member_v2(h_shared_immutable_ptr, &H::m_string1);
-			//(*h_string1_stdshared_const_ptr) = "some new text";
-		}
-
-		{
-			/* Though the type of the safe pointer to the object member varies depending on how the object was
-			declared, you can make a (templated) accessor function that will return a safe pointer of the
-			appropriate type. */
-			auto h_string1_scpptr = H::safe_pointer_to_member_string1(&h_scpobj);
-			(*h_string1_scpptr) = "some new text";
-
-			auto h_string1_refcptr = H::safe_pointer_to_member_string1(h_refcptr);
-			(*h_string1_refcptr) = "some new text";
-
-			auto h_string1_regptr = H::safe_pointer_to_member_string1(&h_regobj);
-			(*h_string1_regptr) = "some new text";
-
-			auto h_string1_rlxregptr = H::safe_pointer_to_member_string1(&h_rlxregobj);
-			(*h_string1_rlxregptr) = "some new text";
-
-			auto h_string1_mstdvec_iter = H::safe_pointer_to_member_string1(h_mstdvec_iter);
-			(*h_string1_mstdvec_iter) = "some new text";
-
-			auto h_string1_msevec_ipointer = H::safe_pointer_to_member_string1(h_msevec_ipointer);
-			(*h_string1_msevec_ipointer) = "some new text";
-
-			auto h_string1_msevec_ssiter = H::safe_pointer_to_member_string1(h_msevec_ssiter);
-			(*h_string1_msevec_ssiter) = "some new text";
-
-			auto h_string1_writelock_ptr = H::safe_pointer_to_member_string1(h_writelock_ptr);
-			(*h_string1_writelock_ptr) = "some new text";
-
-			auto h_string1_stdshared_const_ptr = H::safe_pointer_to_member_string1(h_shared_immutable_ptr);
+			auto h_string1_stdshared_const_ptr = mse::make_const_pointer_to_member_v2(h_shared_immutable_ptr, &H::m_string1);
 			//(*h_string1_stdshared_const_ptr) = "some new text";
 		}
 	}
 
 	{
-		/*******************/
-		/*  Poly pointers  */
-		/*******************/
+		/*************************/
+		/*   Simple Benchmarks   */
+		/*************************/
 
-		/* Poly pointers are "chameleon" pointers that can be constructed from, and retain the safety
-		features of multiple different pointer types in this library. If you'd like your function to be
-		able to take different types of safe pointer parameters, you can "templatize" your function, or
-		alternatively, you can declare your pointer parameters as poly pointers. */
-
-		class A {
+		/* Just some simple speed tests. */
+		class CE {
 		public:
-			A() {}
-			A(std::string x) : b(x) {}
-			virtual ~A() {}
-
-			std::string b = "some text ";
+			CE() {}
+			CE(int& count_ref) : m_count_ptr(&count_ref) { (*m_count_ptr) += 1; }
+			virtual ~CE() { (*m_count_ptr) -= 1; }
+			void increment() { (*m_count_ptr) += 1; }
+			void decrement() { (*m_count_ptr) -= 1; }
+			int m_x;
+			int *m_count_ptr;
 		};
-		class D : public A {
-		public:
-			D(std::string x) : A(x) {}
-		};
-		class B {
-		public:
-			static std::string foo1(mse::TXScopePolyPointer<A> ptr) {
-				std::string retval = ptr->b;
-				return retval;
-			}
-			static std::string foo2(mse::TXScopePolyConstPointer<A> ptr) {
-				std::string retval = ptr->b;
-				return retval;
-			}
-			static std::string foo3(mse::TXScopePolyPointer<std::string> ptr) {
-				std::string retval = (*ptr) + (*ptr);
-				return retval;
-			}
-			static std::string foo4(mse::TXScopePolyConstPointer<std::string> ptr) {
-				std::string retval = (*ptr) + (*ptr);
-				return retval;
-			}
-		protected:
-			~B() {}
-		};
-
-		/* To demonstrate, first we'll declare some objects such that we can obtain safe pointers to those
-		objects. For better or worse, this library provides a bunch of different safe pointers types. */
-		mse::TXScopeObj<A> a_scpobj;
-		auto a_refcptr = mse::make_refcounting<A>();
-		mse::TRegisteredObj<A> a_regobj;
-		mse::TRelaxedRegisteredObj<A> a_rlxregobj;
-
-		/* Safe iterators are a type of safe pointer too. */
-		mse::mstd::vector<A> a_mstdvec;
-		a_mstdvec.resize(1);
-		auto a_mstdvec_iter = a_mstdvec.begin();
-		mse::us::msevector<A> a_msevec;
-		a_msevec.resize(1);
-		auto a_msevec_ipointer = a_msevec.ibegin();
-		auto a_msevec_ssiter = a_msevec.ss_begin();
-
-		/* And note that safe pointers to member elements need to be wrapped in an mse::TXScopeAnyPointer<> for
-		mse::TXScopePolyPointer<> to accept them. */
-		auto b_member_a_refc_anyptr = mse::TXScopeAnyPointer<std::string>(mse::make_pointer_to_member_v2(a_refcptr, &A::b));
-		auto b_member_a_reg_anyptr = mse::TXScopeAnyPointer<std::string>(mse::make_pointer_to_member_v2(&a_regobj, &A::b));
-		auto b_member_a_mstdvec_iter_anyptr = mse::TXScopeAnyPointer<std::string>(mse::make_pointer_to_member_v2(a_mstdvec_iter, &A::b));
+	#ifndef NDEBUG
+		static const int number_of_loops = 10/*arbitrary*/;
+	#else // !NDEBUG
+		static const int number_of_loops = 10000000/*arbitrary*/;
+	#endif // !NDEBUG
+		std::cout << std::endl;
+		std::cout << "Some simple benchmarks: \n";
+		std::cout << "number of loops: " << number_of_loops << " \n" << " \n";
 
 		{
-			/* All of these safe pointer types happily convert to an mse::TXScopePolyPointer<>. */
-			auto res_using_scpptr = B::foo1(&a_scpobj);
-			auto res_using_refcptr = B::foo1(a_refcptr);
-			auto res_using_regptr = B::foo1(&a_regobj);
-			auto res_using_rlxregptr = B::foo1(&a_rlxregobj);
-			auto res_using_mstdvec_iter = B::foo1(a_mstdvec_iter);
-			auto res_using_msevec_ipointer = B::foo1(a_msevec_ipointer);
-			auto res_using_msevec_ssiter = B::foo1(a_msevec_ssiter);
-			auto res_using_member_refc_anyptr = B::foo3(b_member_a_refc_anyptr);
-			auto res_using_member_reg_anyptr = B::foo3(b_member_a_reg_anyptr);
-			auto res_using_member_mstdvec_iter_anyptr = B::foo3(b_member_a_mstdvec_iter_anyptr);
-
-			/* Or an mse::TXScopePolyConstPointer<>. */
-			auto res_using_scpptr_via_const_poly = B::foo2(&a_scpobj);
-			auto res_using_refcptr_via_const_poly = B::foo2(a_refcptr);
-			auto res_using_regptr_via_const_poly = B::foo2(&a_regobj);
-			auto res_using_rlxregptr_via_const_poly = B::foo2(&a_rlxregobj);
-			auto res_using_mstdvec_iter_via_const_poly = B::foo2(a_mstdvec_iter);
-			auto res_using_msevec_ipointer_via_const_poly = B::foo2(a_msevec_ipointer);
-			auto res_using_msevec_ssiter_via_const_poly = B::foo2(a_msevec_ssiter);
-			auto res_using_member_refc_anyptr_via_const_poly = B::foo4(b_member_a_refc_anyptr);
-			auto res_using_member_reg_anyptr_via_const_poly = B::foo4(b_member_a_reg_anyptr);
-			auto res_using_member_mstdvec_iter_anyptr_via_const_poly = B::foo4(b_member_a_mstdvec_iter_anyptr);
-		}
-
-		mse::TNullableAnyPointer<A> nanyptr1;
-		mse::TNullableAnyPointer<A> nanyptr2(nullptr);
-		mse::TNullableAnyPointer<A> nanyptr3(a_refcptr);
-		mse::TAnyPointer<A> anyptr3(a_refcptr);
-		nanyptr1 = nullptr;
-		nanyptr1 = 0;
-		nanyptr1 = NULL;
-		nanyptr1 = nanyptr2;
-		nanyptr1 = mse::TNullableAnyPointer<A>(&a_regobj);
-		nanyptr1 = mse::TNullableAnyPointer<A>(a_refcptr);
-		auto res_nap1 = *nanyptr1;
-		
-		mse::CPolyPtrTest1::s_test1();
-		int q = 3;
-	}
-
-	{
-		/*********************************/
-		/*  TAnyRandomAccessIterator<>   */
-		/*  & TAnyRandomAccessSection<>  */
-		/*********************************/
-
-		/* Like TAnyPointer<>, TAnyRandomAccessIterator<> and TAnyRandomAccessSection<> are polymorphic iterators and
-		"sections" that can be used to enable functions to take as arguments any type of iterator or section of any
-		random access container (like an array or vector). */
-
-		mse::mstd::array<int, 4> mstd_array1 { 1, 2, 3, 4 };
-		mse::us::msearray<int, 5> msearray2 { 5, 6, 7, 8, 9 };
-		mse::mstd::vector<int> mstd_vec1 { 10, 11, 12, 13, 14 };
-		class B {
-		public:
-			static void foo1(mse::TXScopeAnyRandomAccessIterator<int> ra_iter1) {
-				ra_iter1[1] = 15;
-			}
-			static int foo2(mse::TXScopeAnyRandomAccessConstIterator<int> const_ra_iter1) {
-				const_ra_iter1 += 2;
-				--const_ra_iter1;
-				const_ra_iter1--;
-				return const_ra_iter1[2];
-			}
-			static void foo3(mse::TXScopeAnyRandomAccessSection<int> ra_section) {
-				for (mse::TXScopeAnyRandomAccessSection<int>::size_type i = 0; i < ra_section.size(); i += 1) {
-					ra_section[i] = 0;
+			std::cout << "pointer declaration, copy and assignment: \n";
+			{
+				int count = 0;
+				CE object1(count);
+				CE object2(count);
+				CE* item_ptr2 = &object1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						CE* item_ptr = (0 == (i % 2)) ? &object1 : &object2;
+						item_ptr2 = item_ptr;
+						(*item_ptr).increment();
+						(*item_ptr2).decrement();
+					}
 				}
-			}
-			static int foo4(mse::TXScopeAnyRandomAccessConstSection<int> const_ra_section) {
-				int retval = 0;
-				for (mse::TXScopeAnyRandomAccessSection<int>::size_type i = 0; i < const_ra_section.size(); i += 1) {
-					retval += const_ra_section[i];
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "native pointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
 				}
-				return retval;
+				std::cout << std::endl;
 			}
-			static int foo5(mse::TXScopeAnyRandomAccessConstSection<int> const_ra_section) {
-				int retval = 0;
-				for (const auto& const_item : const_ra_section) {
-					retval += const_item;
+			{
+				int count = 0;
+				mse::TNoradObj<CE> object1(count);
+				mse::TNoradObj<CE> object2(count);
+				mse::TNoradPointer<CE> item_ptr2 = &object1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TNoradPointer<CE> item_ptr = (0 == (i % 2)) ? &object1 : &object2;
+						item_ptr2 = item_ptr;
+						(*item_ptr).increment();
+						(*item_ptr2).decrement();
+					}
 				}
-				return retval;
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TNoradPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
 			}
-		};
+			{
+				int count = 0;
+				mse::TRefCountingPointer<CE> object1_ptr = mse::make_refcounting<CE>(count);
+				mse::TRefCountingPointer<CE> object2_ptr = mse::make_refcounting<CE>(count);
+				mse::TRefCountingPointer<CE> item_ptr2 = object1_ptr;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					mse::TRefCountingPointer<CE> item_ptr = (0 == (i % 2)) ? object1_ptr : object2_ptr;
+					item_ptr2 = item_ptr;
+					(*item_ptr).increment();
+					(*item_ptr2).decrement();
+				}
 
-		auto mstd_array_iter1 = mstd_array1.begin();
-		mstd_array_iter1++;
-		auto res1 = B::foo2(mstd_array_iter1);
-		B::foo1(mstd_array_iter1);
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRefCountingPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto object1_ptr = std::make_shared<CE>(count);
+				auto object2_ptr = std::make_shared<CE>(count);
+				auto item_ptr2 = object1_ptr;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto item_ptr = (0 == (i % 2)) ? object1_ptr : object2_ptr;
+					item_ptr2 = item_ptr;
+					(*item_ptr).increment();
+					(*item_ptr2).decrement();
+				}
 
-		auto msearray_const_iter2 = msearray2.ss_cbegin();
-		msearray_const_iter2 += 2;
-		auto res2 = B::foo2(msearray_const_iter2);
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "std::shared_ptr: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				mse::TRegisteredObj<CE> object1(count);
+				mse::TRegisteredObj<CE> object2(count);
+				mse::TRegisteredPointer<CE> item_ptr2 = &object1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TRegisteredPointer<CE> item_ptr = (0 == (i % 2)) ? &object1 : &object2;
+						item_ptr2 = item_ptr;
+						(*item_ptr).increment();
+						(*item_ptr2).decrement();
+					}
+				}
 
-		auto res3 = B::foo2(mstd_vec1.cbegin());
-		B::foo1(++mstd_vec1.begin());
-		auto res4 = B::foo2(mstd_vec1.begin());
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRegisteredPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				mse::TCRegisteredObj<CE> object1(count);
+				mse::TCRegisteredObj<CE> object2(count);
+				mse::TCRegisteredPointer<CE> item_ptr2 = &object1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TCRegisteredPointer<CE> item_ptr = (0 == (i % 2)) ? &object1 : &object2;
+						item_ptr2 = item_ptr;
+						(*item_ptr).increment();
+						(*item_ptr2).decrement();
+					}
+				}
 
-		mse::TXScopeAnyRandomAccessIterator<int> ra_iter1 = mstd_vec1.begin();
-		mse::TXScopeAnyRandomAccessIterator<int> ra_iter2 = mstd_vec1.end();
-		auto res5 = ra_iter2 - ra_iter1;
-		ra_iter1 = ra_iter2;
-
-		{
-			std::array<int, 4> std_array1{ 1, 2, 3, 4 };
-			mse::TXScopeAnyRandomAccessIterator<int> ra_iter1(std_array1.begin());
-			mse::TXScopeAnyRandomAccessIterator<int> ra_iter2 = std_array1.end();
-			auto res5 = ra_iter2 - ra_iter1;
-			ra_iter1 = ra_iter2;
-			int q = 3;
-		}
-
-		mse::TXScopeObj<mse::mstd::array<int, 4>> mstd_array3_scbobj = mse::mstd::array<int, 4>({ 1, 2, 3, 4 });
-		auto mstd_array_scpiter3 = mse::mstd::make_xscope_begin_iterator(&mstd_array3_scbobj);
-		//mstd_array_scpiter3 = mstd_array3_scbobj.begin();
-		++mstd_array_scpiter3;
-		B::foo1(mstd_array_scpiter3);
-
-		mse::TXScopeAnyRandomAccessSection<int> xscp_ra_section1(mstd_array_iter1, 2);
-		B::foo3(xscp_ra_section1);
-
-		mse::TXScopeAnyRandomAccessSection<int> xscp_ra_section2(++mstd_vec1.begin(), 3);
-		auto res6 = B::foo5(xscp_ra_section2);
-		B::foo3(xscp_ra_section2);
-		auto res7 = B::foo4(xscp_ra_section2);
-
-		auto xscp_ra_section1_xscp_iter1 = xscp_ra_section1.xscope_begin();
-		auto xscp_ra_section1_xscp_iter2 = xscp_ra_section1.xscope_end();
-		auto res8 = xscp_ra_section1_xscp_iter2 - xscp_ra_section1_xscp_iter1;
-		bool res9 = (xscp_ra_section1_xscp_iter1 < xscp_ra_section1_xscp_iter2);
-
-		auto ra_section1 = mse::make_random_access_section(mstd_array_iter1, 2);
-		B::foo3(ra_section1);
-		auto ra_const_section2 = mse::make_random_access_const_section(mstd_vec1.cbegin(), 2);
-		B::foo4(ra_const_section2);
-
-		int q = 5;
-	}
-
-	{
-		/********************/
-		/*  legacy helpers  */
-		/********************/
-
-		{
-			MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(int) iptrwbv1 = MSE_LH_ALLOC_DYN_ARRAY1(MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(int), 2 * sizeof(int));
-			iptrwbv1[0] = 1;
-			iptrwbv1[1] = 2;
-			MSE_LH_REALLOC(int, iptrwbv1, 5 * sizeof(int));
-			auto res10 = iptrwbv1[0];
-			auto res11 = iptrwbv1[1];
-			auto res12 = iptrwbv1[2];
-		}
-
-		{
-			struct s1_type {
-				MSE_LH_FIXED_ARRAY_DECLARATION(int, 3, nar11) = { 1, 2, 3 };
-			} s1, s2;
-
-			MSE_LH_FIXED_ARRAY_DECLARATION(int, 5, nar1) = { 1, 2, 3, 4, 5 };
-			auto res14 = nar1[0];
-			auto res15 = nar1[1];
-			auto res16 = nar1[2];
-
-			s2 = s1;
-
-			s2.nar11[1] = 4;
-			s1 = s2;
-			auto res16b = s1.nar11[1];
-
-			MSE_LH_ARRAY_ITERATOR_TYPE(int) naraiter1 = s1.nar11;
-			auto res16c = naraiter1[1];
-		}
-
-		{
-			MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(int) iptrwbv1 = MSE_LH_ALLOC_DYN_ARRAY1(MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(int), 2 * sizeof(int));
-			iptrwbv1[0] = 1;
-			iptrwbv1[1] = 2;
-
-			MSE_LH_ARRAY_ITERATOR_TYPE(int) naraiter1;
-			MSE_LH_ARRAY_ITERATOR_TYPE(int) naraiter2 = nullptr;
-			MSE_LH_ARRAY_ITERATOR_TYPE(int) naraiter3 = iptrwbv1;
-			naraiter1 = nullptr;
-			naraiter1 = 0;
-			naraiter1 = NULL;
-			naraiter1 = naraiter2;
-			naraiter1 = iptrwbv1;
-			auto res17 = naraiter1[1];
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TCRegisteredPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			std::cout << std::endl;
 		}
 
 		{
-			typedef int dyn_arr2_element_type;
-			MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(dyn_arr2_element_type) dyn_arr2;
-			MSE_LH_ALLOC(dyn_arr2_element_type, dyn_arr2, 64/*bytes*/);
-			//dyn_arr2 = MSE_LH_ALLOC_DYN_ARRAY1(MSE_LH_DYNAMIC_ARRAY_ITERATOR_TYPE(dyn_arr2_element_type), 64/*bytes*/);
+			std::cout << "target object allocation and deallocation: \n";
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						CE object(count);
+						if (0 == (i % 2)) {
+							object.increment();
+						}
+						else {
+							object.decrement();
+						}
+					}
+				}
 
-			MSE_LH_MEMSET(dyn_arr2, 99, 64/*bytes*/);
-			auto dyn_arr2b = dyn_arr2;
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "native pointer targeting the stack: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TNoradObj<CE> object(count);
+						if (0 == (i % 2)) {
+							object.increment();
+						}
+						else {
+							object.decrement();
+						}
+					}
+				}
 
-			MSE_LH_FREE(dyn_arr2);
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TNoradPointer targeting the stack: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TRegisteredObj<CE> object(count);
+						if (0 == (i % 2)) {
+							object.increment();
+						}
+						else {
+							object.decrement();
+						}
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRegisteredPointer targeting the stack: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				{
+					for (int i = 0; i < number_of_loops; i += 1) {
+						mse::TCRegisteredObj<CE> object(count);
+						if (0 == (i % 2)) {
+							object.increment();
+						}
+						else {
+							object.decrement();
+						}
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TCRegisteredPointer targeting the stack: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto owner_ptr = std::make_unique<CE>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "native pointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto owner_ptr = std::make_unique<mse::TNoradObj<CE>>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TNoradPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					mse::TRefCountingNotNullPointer<CE> owner_ptr = mse::make_refcounting<CE>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRefCountingPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto owner_ptr = std::make_shared<CE>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "std::shared_ptr: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto owner_ptr = std::make_unique<mse::TRegisteredObj<CE>>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRegisteredPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				int count = 0;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				for (int i = 0; i < number_of_loops; i += 1) {
+					auto owner_ptr = std::make_unique<mse::TCRegisteredObj<CE>>(count);
+					if (0 == (i % 2)) {
+						(*owner_ptr).increment();
+					}
+					else {
+						(*owner_ptr).decrement();
+					}
+				}
+
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TCRegisteredPointer: " << time_span.count() << " seconds.";
+				if (0 != count) {
+					std::cout << " destructions pending: " << count << "."; /* Using the count variable for (potential) output should prevent the optimizer from discarding it. */
+				}
+				std::cout << std::endl;
+			}
+			std::cout << std::endl;
 		}
 
 		{
-			typedef int arr_element_type;
-			MSE_LH_FIXED_ARRAY_DECLARATION(arr_element_type, 3/*elements*/, array1) = { 1, 2, 3 };
-			MSE_LH_FIXED_ARRAY_DECLARATION(arr_element_type, 3/*elements*/, array2) = { 4, 5, 6 };
+			std::cout << "dereferencing: \n";
+			static const int number_of_loops2 = (10/*arbitrary*/)*number_of_loops;
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					CF* m_next_item_ptr;
+					int m_a = 3;
+				};
+				CF item1(1);
+				CF item2(2);
+				CF item3(3);
+				item1.m_next_item_ptr = &item2;
+				item2.m_next_item_ptr = &item3;
+				item3.m_next_item_ptr = &item1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				CF* cf_ptr = item1.m_next_item_ptr;
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					cf_ptr = cf_ptr->m_next_item_ptr;
+					if (!cf_ptr) { MSE_THROW(""); }
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "native pointer (checked) dereferencing: " << time_span.count() << " seconds.";
+				if (3 == cf_ptr->m_a) {
+					std::cout << " "; /* Using cf_ptr->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					CF* m_next_item_ptr;
+					int m_a = 3;
+				};
+				CF item1(1);
+				CF item2(2);
+				CF item3(3);
+				item1.m_next_item_ptr = &item2;
+				item2.m_next_item_ptr = &item3;
+				item3.m_next_item_ptr = &item1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				CF* cf_ptr = item1.m_next_item_ptr;
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					cf_ptr = cf_ptr->m_next_item_ptr;
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "native pointer dereferencing: " << time_span.count() << " seconds.";
+				if (3 == cf_ptr->m_a) {
+					std::cout << " "; /* Using cf_ptr->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					mse::TNoradPointer<CF> m_next_item_ptr;
+					int m_a = 3;
+				};
+				mse::TNoradObj<CF> item1(1);
+				mse::TNoradObj<CF> item2(2);
+				mse::TNoradObj<CF> item3(3);
+				item1.m_next_item_ptr = &item2;
+				item2.m_next_item_ptr = &item3;
+				item3.m_next_item_ptr = &item1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				mse::TNoradPointer<CF>* rpfl_ptr = std::addressof(item1.m_next_item_ptr);
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					rpfl_ptr = std::addressof((*rpfl_ptr)->m_next_item_ptr);
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TNoradPointer (checked) dereferencing: " << time_span.count() << " seconds.";
+				if (3 == (*rpfl_ptr)->m_a) {
+					std::cout << " "; /* Using rpfl_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
 
-			MSE_LH_MEMSET(array1, 99, 3/*elements*/ * sizeof(arr_element_type));
-			MSE_LH_MEMCPY(array2, array1, 3/*elements*/ * sizeof(arr_element_type));
-			auto res18 = array2[1];
+				item1.m_next_item_ptr = nullptr;
+				item2.m_next_item_ptr = nullptr;
+				item3.m_next_item_ptr = nullptr;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					mse::TCRegisteredPointer<CF> m_next_item_ptr;
+					int m_a = 3;
+				};
+				mse::TCRegisteredObj<CF> item1(1);
+				mse::TCRegisteredObj<CF> item2(2);
+				mse::TCRegisteredObj<CF> item3(3);
+				item1.m_next_item_ptr = &item2;
+				item2.m_next_item_ptr = &item3;
+				item3.m_next_item_ptr = &item1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				mse::TCRegisteredPointer<CF>* rpfl_ptr = std::addressof(item1.m_next_item_ptr);
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					rpfl_ptr = std::addressof((*rpfl_ptr)->m_next_item_ptr);
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TCRegisteredPointer (checked) dereferencing: " << time_span.count() << " seconds.";
+				if (3 == (*rpfl_ptr)->m_a) {
+					std::cout << " "; /* Using rpfl_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					mse::TCRegisteredPointer<CF> m_next_item_ptr;
+					int m_a = 3;
+				};
+				mse::TCRegisteredObj<CF> item1(1);
+				mse::TCRegisteredObj<CF> item2(2);
+				mse::TCRegisteredObj<CF> item3(3);
+				item1.m_next_item_ptr = &item2;
+				item2.m_next_item_ptr = &item3;
+				item3.m_next_item_ptr = &item1;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				CF* cf_ptr = static_cast<CF*>(item1.m_next_item_ptr);
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					cf_ptr = static_cast<CF*>(cf_ptr->m_next_item_ptr);
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TCRegisteredPointer unchecked dereferencing: " << time_span.count() << " seconds.";
+				if (3 == cf_ptr->m_a) {
+					std::cout << " "; /* Using rpfl_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					mse::TRefCountingPointer<CF> m_next_item_ptr;
+					int m_a = 3;
+				};
+				auto item1_ptr = mse::make_refcounting<CF>(1);
+				auto item2_ptr = mse::make_refcounting<CF>(2);
+				auto item3_ptr = mse::make_refcounting<CF>(3);
+				item1_ptr->m_next_item_ptr = item2_ptr;
+				item2_ptr->m_next_item_ptr = item3_ptr;
+				item3_ptr->m_next_item_ptr = item1_ptr;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				mse::TRefCountingPointer<CF>* refc_ptr = std::addressof(item1_ptr->m_next_item_ptr);
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					refc_ptr = std::addressof((*refc_ptr)->m_next_item_ptr);
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "mse::TRefCountingPointer (checked) dereferencing: " << time_span.count() << " seconds.";
+				item1_ptr->m_next_item_ptr = nullptr; /* to break the reference cycle */
+				if (3 == (*refc_ptr)->m_a) {
+					std::cout << " "; /* Using refc_ref->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			{
+				class CF {
+				public:
+					CF(int a = 0) : m_a(a) {}
+					std::weak_ptr<CF> m_next_item_ptr;
+					int m_a = 3;
+				};
+				auto item1_ptr = std::make_shared<CF>(1);
+				auto item2_ptr = std::make_shared<CF>(2);
+				auto item3_ptr = std::make_shared<CF>(3);
+				item1_ptr->m_next_item_ptr = item2_ptr;
+				item2_ptr->m_next_item_ptr = item3_ptr;
+				item3_ptr->m_next_item_ptr = item1_ptr;
+				auto t1 = std::chrono::high_resolution_clock::now();
+				std::weak_ptr<CF>* wp_ptr = &(item1_ptr->m_next_item_ptr);
+				for (int i = 0; i < number_of_loops2; i += 1) {
+					wp_ptr = &((*wp_ptr).lock()->m_next_item_ptr);
+				}
+				auto t2 = std::chrono::high_resolution_clock::now();
+				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+				std::cout << "std::weak_ptr dereferencing: " << time_span.count() << " seconds.";
+				if (3 == (*wp_ptr).lock()->m_a) {
+					std::cout << " "; /* Using wp_ref.lock()->m_a for (potential) output should prevent the optimizer from discarding too much. */
+				}
+				std::cout << std::endl;
+			}
+			std::cout << std::endl;
 		}
 	}
 

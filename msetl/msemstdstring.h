@@ -10,9 +10,10 @@
 
 #include "msemsestring.h"
 
-#ifdef MSE_SAFER_SUBSTITUTES_DISABLED
-#define MSE_MSTDSTRING_DISABLED
-#endif /*MSE_SAFER_SUBSTITUTES_DISABLED*/
+/* Conditional definition of MSE_MSTDSTRING_DISABLED was moved to msemsestring.h. */
+//#ifdef MSE_SAFER_SUBSTITUTES_DISABLED
+//#define MSE_MSTDSTRING_DISABLED
+//#endif /*MSE_SAFER_SUBSTITUTES_DISABLED*/
 
 #ifdef MSE_CUSTOM_THROW_DEFINITION
 #include <iostream>
@@ -53,6 +54,219 @@ namespace mse {
 			}
 		}
 
+		/* Following are some template (iterator) classes that, organizationally, should be members of mstd::basic_string<>. (And they
+		used to be.) However, being a member of mstd::basic_string<> makes them "dependent types", and dependent types do not participate
+		in automatic template parameter type deduction. So we had to haul them here outside of mstd::basic_string<>. */
+
+		template<class _Ty, class _Traits, class _A>
+		class Tbasic_string_xscope_iterator;
+
+		template<class _Ty, class _Traits = std::char_traits<_Ty>, class _A = std::allocator<_Ty>>
+		class Tbasic_string_xscope_const_iterator : public mse::impl::random_access_const_iterator_base<_Ty>, public mse::us::impl::XScopeContainsNonOwningScopeReferenceTagBase {
+		public:
+			typedef mse::mstd::basic_string<_Ty, _Traits, _A> mstd_basic_string;
+			typedef typename mstd_basic_string::_MBS _MBS;
+			typedef typename _MBS::random_access_const_iterator_base base_class;
+			typedef typename base_class::iterator_category iterator_category;
+			typedef typename base_class::value_type value_type;
+			typedef typename base_class::difference_type difference_type;
+			typedef typename base_class::pointer pointer;
+			typedef typename base_class::reference reference;
+			typedef const pointer const_pointer;
+			typedef const reference const_reference;
+
+			template <typename _TXScopePointer, class = typename std::enable_if<
+				std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedConstPointer<mstd_basic_string> >::value
+				|| std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedPointer<mstd_basic_string> >::value
+				|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedConstPointer<mstd_basic_string> >::value
+				|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedPointer<mstd_basic_string> >::value
+				, void>::type>
+				Tbasic_string_xscope_const_iterator(const _TXScopePointer& owner_ptr)
+				: m_xscope_ss_const_iterator(mse::make_xscope_const_pointer_to_member(*((*owner_ptr).m_shptr), owner_ptr)) {}
+
+			Tbasic_string_xscope_const_iterator(const Tbasic_string_xscope_const_iterator& src_cref) : m_xscope_ss_const_iterator(src_cref.m_xscope_ss_const_iterator) {}
+			Tbasic_string_xscope_const_iterator(const Tbasic_string_xscope_iterator<_Ty, _Traits, _A>& src_cref) : m_xscope_ss_const_iterator(src_cref.m_xscope_ss_iterator) {}
+			~Tbasic_string_xscope_const_iterator() {}
+			const typename _MBS::xscope_ss_const_iterator_type& msebasic_string_xscope_ss_const_iterator_type() const {
+				return m_xscope_ss_const_iterator;
+			}
+			typename _MBS::xscope_ss_const_iterator_type& msebasic_string_xscope_ss_const_iterator_type() {
+				return m_xscope_ss_const_iterator;
+			}
+			const typename _MBS::xscope_ss_const_iterator_type& mvssci() const { return msebasic_string_xscope_ss_const_iterator_type(); }
+			typename _MBS::xscope_ss_const_iterator_type& mvssci() { return msebasic_string_xscope_ss_const_iterator_type(); }
+
+			void reset() { msebasic_string_xscope_ss_const_iterator_type().reset(); }
+			bool points_to_an_item() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_an_item(); }
+			bool points_to_end_marker() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_end_marker(); }
+			bool points_to_beginning() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_beginning(); }
+			/* has_next_item_or_end_marker() is just an alias for points_to_an_item(). */
+			bool has_next_item_or_end_marker() const { return msebasic_string_xscope_ss_const_iterator_type().has_next_item_or_end_marker(); }
+			/* has_next() is just an alias for points_to_an_item() that's familiar to java programmers. */
+			bool has_next() const { return msebasic_string_xscope_ss_const_iterator_type().has_next(); }
+			bool has_previous() const { return msebasic_string_xscope_ss_const_iterator_type().has_previous(); }
+			void set_to_beginning() { msebasic_string_xscope_ss_const_iterator_type().set_to_beginning(); }
+			void set_to_end_marker() { msebasic_string_xscope_ss_const_iterator_type().set_to_end_marker(); }
+			void set_to_next() { msebasic_string_xscope_ss_const_iterator_type().set_to_next(); }
+			void set_to_previous() { msebasic_string_xscope_ss_const_iterator_type().set_to_previous(); }
+			Tbasic_string_xscope_const_iterator& operator ++() { msebasic_string_xscope_ss_const_iterator_type().operator ++(); return (*this); }
+			Tbasic_string_xscope_const_iterator operator++(int) { Tbasic_string_xscope_const_iterator _Tmp = *this; ++*this; return (_Tmp); }
+			Tbasic_string_xscope_const_iterator& operator --() { msebasic_string_xscope_ss_const_iterator_type().operator --(); return (*this); }
+			Tbasic_string_xscope_const_iterator operator--(int) { Tbasic_string_xscope_const_iterator _Tmp = *this; --*this; return (_Tmp); }
+			void advance(typename _MBS::difference_type n) { msebasic_string_xscope_ss_const_iterator_type().advance(n); }
+			void regress(typename _MBS::difference_type n) { msebasic_string_xscope_ss_const_iterator_type().regress(n); }
+			Tbasic_string_xscope_const_iterator& operator +=(difference_type n) { msebasic_string_xscope_ss_const_iterator_type().operator +=(n); return (*this); }
+			Tbasic_string_xscope_const_iterator& operator -=(difference_type n) { msebasic_string_xscope_ss_const_iterator_type().operator -=(n); return (*this); }
+			Tbasic_string_xscope_const_iterator operator+(difference_type n) const { auto retval = (*this); retval += n; return retval; }
+			Tbasic_string_xscope_const_iterator operator-(difference_type n) const { return ((*this) + (-n)); }
+			typename _MBS::difference_type operator-(const Tbasic_string_xscope_const_iterator& _Right_cref) const { return msebasic_string_xscope_ss_const_iterator_type() - (_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
+			typename _MBS::const_reference operator*() const { return msebasic_string_xscope_ss_const_iterator_type().operator*(); }
+			typename _MBS::const_reference item() const { return operator*(); }
+			typename _MBS::const_reference previous_item() const { return msebasic_string_xscope_ss_const_iterator_type().previous_item(); }
+			typename _MBS::const_pointer operator->() const { return msebasic_string_xscope_ss_const_iterator_type().operator->(); }
+			typename _MBS::const_reference operator[](typename _MBS::difference_type _Off) const { return msebasic_string_xscope_ss_const_iterator_type()[_Off]; }
+			Tbasic_string_xscope_const_iterator& operator=(const Tbasic_string_xscope_const_iterator& _Right_cref) {
+				msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_const_iterator_type());
+				return (*this);
+			}
+			Tbasic_string_xscope_const_iterator& operator=(const Tbasic_string_xscope_iterator<_Ty, _Traits, _A>& _Right_cref) {
+				msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_iterator_type());
+				return (*this);
+			}
+			Tbasic_string_xscope_const_iterator& operator=(const typename mstd_basic_string::const_iterator& _Right_cref) {
+				//msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_const_iterator_type());
+				if (!(_Right_cref.target_container_ptr())
+					|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
+					MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::Tbasic_string_xscope_const_iterator"));
+				}
+				(*this).set_to_beginning();
+				(*this) += _Right_cref.position();
+				return (*this);
+			}
+			Tbasic_string_xscope_const_iterator& operator=(const typename mstd_basic_string::iterator& _Right_cref) {
+				//msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_iterator_type());
+				if (!(_Right_cref.target_container_ptr())
+					|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
+					MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::Tbasic_string_xscope_const_iterator"));
+				}
+				(*this).set_to_beginning();
+				(*this) += _Right_cref.position();
+				return (*this);
+			}
+			bool operator==(const Tbasic_string_xscope_const_iterator& _Right_cref) const { return msebasic_string_xscope_ss_const_iterator_type().operator==(_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
+			bool operator!=(const Tbasic_string_xscope_const_iterator& _Right_cref) const { return (!(_Right_cref == (*this))); }
+			bool operator<(const Tbasic_string_xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() < _Right.msebasic_string_xscope_ss_const_iterator_type()); }
+			bool operator<=(const Tbasic_string_xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() <= _Right.msebasic_string_xscope_ss_const_iterator_type()); }
+			bool operator>(const Tbasic_string_xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() > _Right.msebasic_string_xscope_ss_const_iterator_type()); }
+			bool operator>=(const Tbasic_string_xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() >= _Right.msebasic_string_xscope_ss_const_iterator_type()); }
+			void set_to_const_item_pointer(const Tbasic_string_xscope_const_iterator& _Right_cref) { msebasic_string_xscope_ss_const_iterator_type().set_to_const_item_pointer(_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
+			msear_size_t position() const { return msebasic_string_xscope_ss_const_iterator_type().position(); }
+			auto target_container_ptr() const -> decltype(msebasic_string_xscope_ss_const_iterator_type().target_container_ptr()) {
+				return msebasic_string_xscope_ss_const_iterator_type().target_container_ptr();
+			}
+			void xscope_tag() const {}
+			void Tbasic_string_xscope_iterator_tag() const {}
+			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		private:
+			typename _MBS::xscope_ss_const_iterator_type m_xscope_ss_const_iterator;
+			friend class /*_Myt*/basic_string<_Ty, _Traits, _A>;
+		};
+		template<class _Ty, class _Traits = std::char_traits<_Ty>, class _A = std::allocator<_Ty>>
+		class Tbasic_string_xscope_iterator : public mse::impl::random_access_iterator_base<_Ty>, public mse::us::impl::XScopeContainsNonOwningScopeReferenceTagBase {
+		public:
+			typedef mse::mstd::basic_string<_Ty, _Traits, _A> mstd_basic_string;
+			typedef typename mstd_basic_string::_MBS _MBS;
+			typedef typename _MBS::random_access_iterator_base base_class;
+			typedef typename base_class::iterator_category iterator_category;
+			typedef typename base_class::value_type value_type;
+			typedef typename base_class::difference_type difference_type;
+			typedef typename base_class::pointer pointer;
+			typedef typename base_class::reference reference;
+			typedef const pointer const_pointer;
+			typedef const reference const_reference;
+
+			template <typename _TXScopePointer, class = typename std::enable_if<
+				std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedPointer<mstd_basic_string> >::value
+				|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedPointer<mstd_basic_string> >::value
+				, void>::type>
+				Tbasic_string_xscope_iterator(const _TXScopePointer& owner_ptr)
+				: m_xscope_ss_iterator(mse::make_xscope_pointer_to_member(*((*owner_ptr).m_shptr), owner_ptr)) {}
+
+			Tbasic_string_xscope_iterator(const Tbasic_string_xscope_iterator& src_cref) : m_xscope_ss_iterator(src_cref.m_xscope_ss_iterator) {}
+			~Tbasic_string_xscope_iterator() {}
+			const typename _MBS::xscope_ss_iterator_type& msebasic_string_xscope_ss_iterator_type() const {
+				return m_xscope_ss_iterator;
+			}
+			typename _MBS::xscope_ss_iterator_type& msebasic_string_xscope_ss_iterator_type() {
+				return m_xscope_ss_iterator;
+			}
+			const typename _MBS::xscope_ss_iterator_type& mvssi() const { return msebasic_string_xscope_ss_iterator_type(); }
+			typename _MBS::xscope_ss_iterator_type& mvssi() { return msebasic_string_xscope_ss_iterator_type(); }
+
+			void reset() { msebasic_string_xscope_ss_iterator_type().reset(); }
+			bool points_to_an_item() const { return msebasic_string_xscope_ss_iterator_type().points_to_an_item(); }
+			bool points_to_end_marker() const { return msebasic_string_xscope_ss_iterator_type().points_to_end_marker(); }
+			bool points_to_beginning() const { return msebasic_string_xscope_ss_iterator_type().points_to_beginning(); }
+			/* has_next_item_or_end_marker() is just an alias for points_to_an_item(). */
+			bool has_next_item_or_end_marker() const { return msebasic_string_xscope_ss_iterator_type().has_next_item_or_end_marker(); }
+			/* has_next() is just an alias for points_to_an_item() that's familiar to java programmers. */
+			bool has_next() const { return msebasic_string_xscope_ss_iterator_type().has_next(); }
+			bool has_previous() const { return msebasic_string_xscope_ss_iterator_type().has_previous(); }
+			void set_to_beginning() { msebasic_string_xscope_ss_iterator_type().set_to_beginning(); }
+			void set_to_end_marker() { msebasic_string_xscope_ss_iterator_type().set_to_end_marker(); }
+			void set_to_next() { msebasic_string_xscope_ss_iterator_type().set_to_next(); }
+			void set_to_previous() { msebasic_string_xscope_ss_iterator_type().set_to_previous(); }
+			Tbasic_string_xscope_iterator& operator ++() { msebasic_string_xscope_ss_iterator_type().operator ++(); return (*this); }
+			Tbasic_string_xscope_iterator operator++(int) { Tbasic_string_xscope_iterator _Tmp = *this; ++*this; return (_Tmp); }
+			Tbasic_string_xscope_iterator& operator --() { msebasic_string_xscope_ss_iterator_type().operator --(); return (*this); }
+			Tbasic_string_xscope_iterator operator--(int) { Tbasic_string_xscope_iterator _Tmp = *this; --*this; return (_Tmp); }
+			void advance(typename _MBS::difference_type n) { msebasic_string_xscope_ss_iterator_type().advance(n); }
+			void regress(typename _MBS::difference_type n) { msebasic_string_xscope_ss_iterator_type().regress(n); }
+			Tbasic_string_xscope_iterator& operator +=(difference_type n) { msebasic_string_xscope_ss_iterator_type().operator +=(n); return (*this); }
+			Tbasic_string_xscope_iterator& operator -=(difference_type n) { msebasic_string_xscope_ss_iterator_type().operator -=(n); return (*this); }
+			Tbasic_string_xscope_iterator operator+(difference_type n) const { auto retval = (*this); retval += n; return retval; }
+			Tbasic_string_xscope_iterator operator-(difference_type n) const { return ((*this) + (-n)); }
+			typename _MBS::difference_type operator-(const Tbasic_string_xscope_iterator& _Right_cref) const { return msebasic_string_xscope_ss_iterator_type() - (_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
+			typename _MBS::reference operator*() const { return msebasic_string_xscope_ss_iterator_type().operator*(); }
+			typename _MBS::reference item() const { return operator*(); }
+			typename _MBS::reference previous_item() const { return msebasic_string_xscope_ss_iterator_type().previous_item(); }
+			typename _MBS::pointer operator->() const { return msebasic_string_xscope_ss_iterator_type().operator->(); }
+			typename _MBS::reference operator[](typename _MBS::difference_type _Off) const { return msebasic_string_xscope_ss_iterator_type()[_Off]; }
+			Tbasic_string_xscope_iterator& operator=(const Tbasic_string_xscope_iterator& _Right_cref) {
+				msebasic_string_xscope_ss_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_iterator_type());
+				return (*this);
+			}
+			Tbasic_string_xscope_iterator& operator=(const typename mstd_basic_string::iterator& _Right_cref) {
+				//msebasic_string_xscope_ss_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_iterator_type());
+				if (!(_Right_cref.target_container_ptr())
+					|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
+					MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::Tbasic_string_xscope_iterator"));
+				}
+				(*this).set_to_beginning();
+				(*this) += _Right_cref.position();
+				return (*this);
+			}
+			bool operator==(const Tbasic_string_xscope_iterator& _Right_cref) const { return msebasic_string_xscope_ss_iterator_type().operator==(_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
+			bool operator!=(const Tbasic_string_xscope_iterator& _Right_cref) const { return (!(_Right_cref == (*this))); }
+			bool operator<(const Tbasic_string_xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() < _Right.msebasic_string_xscope_ss_iterator_type()); }
+			bool operator<=(const Tbasic_string_xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() <= _Right.msebasic_string_xscope_ss_iterator_type()); }
+			bool operator>(const Tbasic_string_xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() > _Right.msebasic_string_xscope_ss_iterator_type()); }
+			bool operator>=(const Tbasic_string_xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() >= _Right.msebasic_string_xscope_ss_iterator_type()); }
+			void set_to_item_pointer(const Tbasic_string_xscope_iterator& _Right_cref) { msebasic_string_xscope_ss_iterator_type().set_to_item_pointer(_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
+			msear_size_t position() const { return msebasic_string_xscope_ss_iterator_type().position(); }
+			auto target_container_ptr() const -> decltype(msebasic_string_xscope_ss_iterator_type().target_container_ptr()) {
+				return msebasic_string_xscope_ss_iterator_type().target_container_ptr();
+			}
+			void xscope_tag() const {}
+			void Tbasic_string_xscope_iterator_tag() const {}
+			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		private:
+			typename _MBS::xscope_ss_iterator_type m_xscope_ss_iterator;
+			friend class /*_Myt*/basic_string<_Ty, _Traits, _A>;
+			friend class Tbasic_string_xscope_const_iterator<_Ty, _Traits, _A>;
+		};
+
+
 		template<class _Ty, class _Traits/* = std::char_traits<_Ty>*/, class _A/* = std::allocator<_Ty> */>
 		class basic_string {
 		public:
@@ -91,17 +305,21 @@ namespace mse {
 			typedef typename _MBS::const_iterator _It;
 			basic_string(_It _F, _It _L, const _A& _Al = _A()) : m_shptr(std::make_shared<_MBS>(_F, _L, _Al)) {}
 			basic_string(const _Ty* _F, const _Ty* _L, const _A& _Al = _A()) : m_shptr(std::make_shared<_MBS>(_F, _L, _Al)) {}
-			template<class _Iter, class = typename std::enable_if<_mse_Is_iterator<_Iter>::value, void>::type>
+			template<class _Iter, class = typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, void>::type>
 			basic_string(_Iter _First, _Iter _Last) : m_shptr(std::make_shared<_MBS>(_First, _Last)) {}
-			template<class _Iter, class = typename std::enable_if<_mse_Is_iterator<_Iter>::value, void>::type>
+			template<class _Iter, class = typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, void>::type>
 			basic_string(_Iter _First, _Iter _Last, const _A& _Al) : m_shptr(std::make_shared<_MBS>(_First, _Last, _Al)) {}
 			basic_string(const _Ty* const _Ptr) : m_shptr(std::make_shared<_MBS>(_Ptr)) {}
 			basic_string(const _Ty* const _Ptr, const size_t _Count) : m_shptr(std::make_shared<_MBS>(_Ptr, _Count)) {}
 			basic_string(const _Myt& _X, const size_type _Roff, const _A& _Al = _A()) : m_shptr(std::make_shared<_MBS>(_X.msebasic_string(), _Roff, npos, _Al)) {}
 			basic_string(const _Myt& _X, const size_type _Roff, const size_type _Count, const _A& _Al = _A()) : m_shptr(std::make_shared<_MBS>(_X.msebasic_string(), _Roff, _Count, _Al)) {}
 			/* construct from mse::string_view and "string sections". */
-			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<StringSectionTagBase, _TStringSection>::value), void>::type>
+			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<mse::us::impl::StringSectionTagBase, _TStringSection>::value), void>::type>
 			basic_string(const _TStringSection& _X) : m_shptr(std::make_shared<_MBS>(_X)) {}
+
+			virtual ~basic_string() {
+				msebasic_string().note_parent_destruction();
+			}
 
 			_Myt& operator=(_MBS&& _X) { msebasic_string() = (std::forward<decltype(_X)>(_X)); return (*this); }
 			_Myt& operator=(const _MBS& _X) { msebasic_string() = (_X); return (*this); }
@@ -113,6 +331,7 @@ namespace mse {
 				return (*this);
 			}
 			_Myt& operator=(const _Myt& _X) { msebasic_string() = (_X.msebasic_string()); return (*this); }
+			_Myt& operator=(const _Ty* const _Ptr) { msebasic_string() = (_Myt(_Ptr).msebasic_string()); return (*this); }
 			void reserve(size_type _Count) { m_shptr->reserve(_Count); }
 			void resize(size_type _N, const _Ty& _X = _Ty()) { m_shptr->resize(_N, _X); }
 			typename _MBS::const_reference operator[](size_type _P) const { return m_shptr->operator[](_P); }
@@ -124,7 +343,7 @@ namespace mse {
 			template<class _Iter>
 			void assign(const _Iter& _First, const _Iter& _Last) { m_shptr->assign(_First, _Last); }
 			void assign(size_type _N, const _Ty& _X = _Ty()) { m_shptr->assign(_N, _X); }
-			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<StringSectionTagBase, _TStringSection>::value), void>::type>
+			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<mse::us::impl::StringSectionTagBase, _TStringSection>::value), void>::type>
 			void assign(const _TStringSection& _X) { m_shptr->assign(_X); }
 			template<class ..._Valty>
 			void emplace_back(_Valty&& ..._Val) { m_shptr->emplace_back(std::forward<_Valty>(_Val)...); }
@@ -160,8 +379,8 @@ namespace mse {
 				return m_shptr->data();
 			}
 
-			class xscope_const_iterator;
-			class xscope_iterator;
+			typedef Tbasic_string_xscope_const_iterator<_Ty, _Traits, _A> xscope_const_iterator;
+			typedef Tbasic_string_xscope_iterator<_Ty, _Traits, _A> xscope_iterator;
 
 			class const_iterator : public _MBS::random_access_const_iterator_base {
 			public:
@@ -208,10 +427,16 @@ namespace mse {
 				const_iterator operator+(difference_type n) const { auto retval = (*this); retval += n; return retval; }
 				const_iterator operator-(difference_type n) const { return ((*this) + (-n)); }
 				typename _MBS::difference_type operator-(const const_iterator& _Right_cref) const { return msebasic_string_ss_const_iterator_type() - (_Right_cref.msebasic_string_ss_const_iterator_type()); }
-				typename _MBS::const_reference operator*() const { return msebasic_string_ss_const_iterator_type().operator*(); }
+				typename _MBS::const_reference operator*() const {
+					(*m_msebasic_string_cshptr).assert_parent_not_destroyed();
+					return msebasic_string_ss_const_iterator_type().operator*();
+				}
 				typename _MBS::const_reference item() const { return operator*(); }
 				typename _MBS::const_reference previous_item() const { return msebasic_string_ss_const_iterator_type().previous_item(); }
-				typename _MBS::const_pointer operator->() const { return msebasic_string_ss_const_iterator_type().operator->(); }
+				typename _MBS::const_pointer operator->() const {
+					(*m_msebasic_string_cshptr).assert_parent_not_destroyed();
+					return msebasic_string_ss_const_iterator_type().operator->();
+				}
 				typename _MBS::const_reference operator[](typename _MBS::difference_type _Off) const { return (*(*this + _Off)); }
 				bool operator==(const const_iterator& _Right_cref) const { return msebasic_string_ss_const_iterator_type().operator==(_Right_cref.msebasic_string_ss_const_iterator_type()); }
 				bool operator!=(const const_iterator& _Right_cref) const { return (!(_Right_cref == (*this))); }
@@ -386,16 +611,16 @@ namespace mse {
 			}
 			iterator insert_before(const const_iterator &pos, const _Ty& _X = _Ty()) { return insert_before(pos, 1, _X); }
 			template<class _Iter
-				//>typename std::enable_if<_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
-				, class = _mse_RequireInputIter<_Iter> >
+				//>typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
+				, class = mse::impl::_mse_RequireInputIter<_Iter> >
 			iterator insert_before(const const_iterator &pos, const _Iter &start, const _Iter &end) {
 				auto res = m_shptr->insert_before(pos.msebasic_string_ss_const_iterator_type(), start, end);
 				iterator retval = begin(); retval.msebasic_string_ss_iterator_type() = res;
 				return retval;
 			}
 			template<class _Iter
-				//>typename std::enable_if<_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
-				, class = _mse_RequireInputIter<_Iter> >
+				//>typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
+				, class = mse::impl::_mse_RequireInputIter<_Iter> >
 			iterator insert_before_inclusive(const const_iterator &pos, const _Iter &first, const _Iter &last) {
 				auto end = last; end++;
 				return insert_before(pos, first, end);
@@ -405,7 +630,7 @@ namespace mse {
 				iterator retval = begin(); retval.msebasic_string_ss_iterator_type() = res;
 				return retval;
 			}
-			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<StringSectionTagBase, _TStringSection>::value), void>::type>
+			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<mse::us::impl::StringSectionTagBase, _TStringSection>::value), void>::type>
 			iterator insert_before(const const_iterator &pos, const _TStringSection& _X) {	// insert initializer_list
 				auto res = m_shptr->insert_before(pos.msebasic_string_ss_const_iterator_type(), _X);
 				iterator retval = begin(); retval.msebasic_string_ss_iterator_type() = res;
@@ -423,7 +648,7 @@ namespace mse {
 				m_shptr->insert_before(pos, _Ilist);
 				return *this;
 			}
-			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<StringSectionTagBase, _TStringSection>::value), void>::type>
+			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<mse::us::impl::StringSectionTagBase, _TStringSection>::value), void>::type>
 			basic_string& insert_before(msev_size_t pos, const _TStringSection& _X) {
 				m_shptr->insert_before(pos, _X);
 				return *this;
@@ -433,12 +658,12 @@ namespace mse {
 			iterator insert(const const_iterator &pos, _Ty&& _X) { return insert_before(pos, std::forward<decltype(_X)>(_X)); }
 			iterator insert(const const_iterator &pos, const _Ty& _X = _Ty()) { return insert_before(pos, _X); }
 			template<class _Iter
-				//>typename std::enable_if<_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
-				, class = _mse_RequireInputIter<_Iter> >
+				//>typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, typename base_class::iterator>::type
+				, class = mse::impl::_mse_RequireInputIter<_Iter> >
 				iterator insert(const const_iterator &pos, const _Iter &start, const _Iter &end) { return insert_before(pos, start, end); }
 			iterator insert(const const_iterator &pos, const _Ty* start, const _Ty* end) { return insert_before(pos, start, end); }
 			iterator insert(const const_iterator &pos, _XSTD initializer_list<typename _MBS::value_type> _Ilist) { return insert_before(pos, _Ilist); }
-			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<StringSectionTagBase, _TStringSection>::value), void>::type>
+			template<typename _TStringSection, class = typename std::enable_if<(std::is_base_of<mse::us::impl::StringSectionTagBase, _TStringSection>::value), void>::type>
 			iterator insert(const const_iterator &pos, const _TStringSection& _X) { return insert_before(pos, _X); }
 			template<class ..._Valty>
 			iterator emplace(const const_iterator &pos, _Valty&& ..._Val) {
@@ -504,7 +729,7 @@ namespace mse {
 				msebasic_string().append(_Count, _Ch);
 				return (*this);
 			}
-			template<class _Iter, class = typename std::enable_if<mse::_mse_Is_iterator<_Iter>::value, void>::type>
+			template<class _Iter, class = typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value, void>::type>
 			basic_string& append(const _Iter _First, const _Iter _Last) {
 				msebasic_string().append(_First, _Last);
 				return (*this);
@@ -600,7 +825,7 @@ namespace mse {
 				return (replace(_First - begin(), _Last - _First, _Count, _Ch));
 			}
 
-			template<class _Iter, class = typename std::enable_if<mse::_mse_Is_iterator<_Iter>::value>::type>
+			template<class _Iter, class = typename std::enable_if<mse::impl::_mse_Is_iterator<_Iter>::value>::type>
 			basic_string& replace(const const_iterator _First, const const_iterator _Last,
 				const _Iter _First2, const _Iter _Last2) {
 				const basic_string _Right(_First2, _Last2, get_allocator());
@@ -865,216 +1090,17 @@ namespace mse {
 			}
 
 
-			class xscope_const_iterator : public _MBS::random_access_const_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase {
-			public:
-				typedef typename _MBS::random_access_const_iterator_base base_class;
-				typedef typename base_class::iterator_category iterator_category;
-				typedef typename base_class::value_type value_type;
-				typedef typename base_class::difference_type difference_type;
-				typedef typename base_class::pointer pointer;
-				typedef typename base_class::reference reference;
-				typedef const pointer const_pointer;
-				typedef const reference const_reference;
-
-				template <typename _TXScopePointer, class = typename std::enable_if<
-					std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedConstPointer<basic_string> >::value
-					|| std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedPointer<basic_string> >::value
-					|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedConstPointer<basic_string> >::value
-					|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedPointer<basic_string> >::value
-					, void>::type>
-					xscope_const_iterator(const _TXScopePointer& owner_ptr)
-					: m_xscope_ss_const_iterator(mse::make_xscope_const_pointer_to_member(*((*owner_ptr).m_shptr), owner_ptr)) {}
-
-				xscope_const_iterator(const xscope_const_iterator& src_cref) : m_xscope_ss_const_iterator(src_cref.m_xscope_ss_const_iterator) {}
-				xscope_const_iterator(const xscope_iterator& src_cref) : m_xscope_ss_const_iterator(src_cref.m_xscope_ss_iterator) {}
-				~xscope_const_iterator() {}
-				const typename _MBS::xscope_ss_const_iterator_type& msebasic_string_xscope_ss_const_iterator_type() const {
-					return m_xscope_ss_const_iterator;
-				}
-				typename _MBS::xscope_ss_const_iterator_type& msebasic_string_xscope_ss_const_iterator_type() {
-					return m_xscope_ss_const_iterator;
-				}
-				const typename _MBS::xscope_ss_const_iterator_type& mvssci() const { return msebasic_string_xscope_ss_const_iterator_type(); }
-				typename _MBS::xscope_ss_const_iterator_type& mvssci() { return msebasic_string_xscope_ss_const_iterator_type(); }
-
-				void reset() { msebasic_string_xscope_ss_const_iterator_type().reset(); }
-				bool points_to_an_item() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_an_item(); }
-				bool points_to_end_marker() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_end_marker(); }
-				bool points_to_beginning() const { return msebasic_string_xscope_ss_const_iterator_type().points_to_beginning(); }
-				/* has_next_item_or_end_marker() is just an alias for points_to_an_item(). */
-				bool has_next_item_or_end_marker() const { return msebasic_string_xscope_ss_const_iterator_type().has_next_item_or_end_marker(); }
-				/* has_next() is just an alias for points_to_an_item() that's familiar to java programmers. */
-				bool has_next() const { return msebasic_string_xscope_ss_const_iterator_type().has_next(); }
-				bool has_previous() const { return msebasic_string_xscope_ss_const_iterator_type().has_previous(); }
-				void set_to_beginning() { msebasic_string_xscope_ss_const_iterator_type().set_to_beginning(); }
-				void set_to_end_marker() { msebasic_string_xscope_ss_const_iterator_type().set_to_end_marker(); }
-				void set_to_next() { msebasic_string_xscope_ss_const_iterator_type().set_to_next(); }
-				void set_to_previous() { msebasic_string_xscope_ss_const_iterator_type().set_to_previous(); }
-				xscope_const_iterator& operator ++() { msebasic_string_xscope_ss_const_iterator_type().operator ++(); return (*this); }
-				xscope_const_iterator operator++(int) { xscope_const_iterator _Tmp = *this; ++*this; return (_Tmp); }
-				xscope_const_iterator& operator --() { msebasic_string_xscope_ss_const_iterator_type().operator --(); return (*this); }
-				xscope_const_iterator operator--(int) { xscope_const_iterator _Tmp = *this; --*this; return (_Tmp); }
-				void advance(typename _MBS::difference_type n) { msebasic_string_xscope_ss_const_iterator_type().advance(n); }
-				void regress(typename _MBS::difference_type n) { msebasic_string_xscope_ss_const_iterator_type().regress(n); }
-				xscope_const_iterator& operator +=(difference_type n) { msebasic_string_xscope_ss_const_iterator_type().operator +=(n); return (*this); }
-				xscope_const_iterator& operator -=(difference_type n) { msebasic_string_xscope_ss_const_iterator_type().operator -=(n); return (*this); }
-				xscope_const_iterator operator+(difference_type n) const { auto retval = (*this); retval += n; return retval; }
-				xscope_const_iterator operator-(difference_type n) const { return ((*this) + (-n)); }
-				typename _MBS::difference_type operator-(const xscope_const_iterator& _Right_cref) const { return msebasic_string_xscope_ss_const_iterator_type() - (_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
-				typename _MBS::const_reference operator*() const { return msebasic_string_xscope_ss_const_iterator_type().operator*(); }
-				typename _MBS::const_reference item() const { return operator*(); }
-				typename _MBS::const_reference previous_item() const { return msebasic_string_xscope_ss_const_iterator_type().previous_item(); }
-				typename _MBS::const_pointer operator->() const { return msebasic_string_xscope_ss_const_iterator_type().operator->(); }
-				typename _MBS::const_reference operator[](typename _MBS::difference_type _Off) const { return msebasic_string_xscope_ss_const_iterator_type()[_Off]; }
-				xscope_const_iterator& operator=(const xscope_const_iterator& _Right_cref) {
-					msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_const_iterator_type());
-					return (*this);
-				}
-				xscope_const_iterator& operator=(const xscope_iterator& _Right_cref) {
-					msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_iterator_type());
-					return (*this);
-				}
-				xscope_const_iterator& operator=(const typename _Myt::const_iterator& _Right_cref) {
-					//msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_const_iterator_type());
-					if (!(_Right_cref.target_container_ptr())
-						|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
-						MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::xscope_const_iterator"));
-					}
-					(*this).set_to_beginning();
-					(*this) += _Right_cref.position();
-					return (*this);
-				}
-				xscope_const_iterator& operator=(const typename _Myt::iterator& _Right_cref) {
-					//msebasic_string_xscope_ss_const_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_iterator_type());
-					if (!(_Right_cref.target_container_ptr())
-						|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
-						MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::xscope_const_iterator"));
-					}
-					(*this).set_to_beginning();
-					(*this) += _Right_cref.position();
-					return (*this);
-				}
-				bool operator==(const xscope_const_iterator& _Right_cref) const { return msebasic_string_xscope_ss_const_iterator_type().operator==(_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
-				bool operator!=(const xscope_const_iterator& _Right_cref) const { return (!(_Right_cref == (*this))); }
-				bool operator<(const xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() < _Right.msebasic_string_xscope_ss_const_iterator_type()); }
-				bool operator<=(const xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() <= _Right.msebasic_string_xscope_ss_const_iterator_type()); }
-				bool operator>(const xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() > _Right.msebasic_string_xscope_ss_const_iterator_type()); }
-				bool operator>=(const xscope_const_iterator& _Right) const { return (msebasic_string_xscope_ss_const_iterator_type() >= _Right.msebasic_string_xscope_ss_const_iterator_type()); }
-				void set_to_const_item_pointer(const xscope_const_iterator& _Right_cref) { msebasic_string_xscope_ss_const_iterator_type().set_to_const_item_pointer(_Right_cref.msebasic_string_xscope_ss_const_iterator_type()); }
-				msear_size_t position() const { return msebasic_string_xscope_ss_const_iterator_type().position(); }
-				auto target_container_ptr() const -> decltype(msebasic_string_xscope_ss_const_iterator_type().target_container_ptr()) {
-					return msebasic_string_xscope_ss_const_iterator_type().target_container_ptr();
-				}
-				void xscope_tag() const {}
-				void xscope_iterator_tag() const {}
-				void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
-			private:
-				typename _MBS::xscope_ss_const_iterator_type m_xscope_ss_const_iterator;
-				friend class /*_Myt*/basic_string<_Ty, _Traits>;
-			};
-			class xscope_iterator : public _MBS::random_access_iterator_base, public XScopeContainsNonOwningScopeReferenceTagBase {
-			public:
-				typedef typename _MBS::random_access_iterator_base base_class;
-				typedef typename base_class::iterator_category iterator_category;
-				typedef typename base_class::value_type value_type;
-				typedef typename base_class::difference_type difference_type;
-				typedef typename base_class::pointer pointer;
-				typedef typename base_class::reference reference;
-				typedef const pointer const_pointer;
-				typedef const reference const_reference;
-
-				template <typename _TXScopePointer, class = typename std::enable_if<
-					std::is_convertible<_TXScopePointer, mse::TXScopeItemFixedPointer<basic_string> >::value
-					|| std::is_convertible<_TXScopePointer, mse::TXScopeFixedPointer<basic_string> >::value
-					, void>::type>
-					xscope_iterator(const _TXScopePointer& owner_ptr)
-					: m_xscope_ss_iterator(mse::make_xscope_pointer_to_member(*((*owner_ptr).m_shptr), owner_ptr)) {}
-
-				xscope_iterator(const xscope_iterator& src_cref) : m_xscope_ss_iterator(src_cref.m_xscope_ss_iterator) {}
-				~xscope_iterator() {}
-				const typename _MBS::xscope_ss_iterator_type& msebasic_string_xscope_ss_iterator_type() const {
-					return m_xscope_ss_iterator;
-				}
-				typename _MBS::xscope_ss_iterator_type& msebasic_string_xscope_ss_iterator_type() {
-					return m_xscope_ss_iterator;
-				}
-				const typename _MBS::xscope_ss_iterator_type& mvssi() const { return msebasic_string_xscope_ss_iterator_type(); }
-				typename _MBS::xscope_ss_iterator_type& mvssi() { return msebasic_string_xscope_ss_iterator_type(); }
-
-				void reset() { msebasic_string_xscope_ss_iterator_type().reset(); }
-				bool points_to_an_item() const { return msebasic_string_xscope_ss_iterator_type().points_to_an_item(); }
-				bool points_to_end_marker() const { return msebasic_string_xscope_ss_iterator_type().points_to_end_marker(); }
-				bool points_to_beginning() const { return msebasic_string_xscope_ss_iterator_type().points_to_beginning(); }
-				/* has_next_item_or_end_marker() is just an alias for points_to_an_item(). */
-				bool has_next_item_or_end_marker() const { return msebasic_string_xscope_ss_iterator_type().has_next_item_or_end_marker(); }
-				/* has_next() is just an alias for points_to_an_item() that's familiar to java programmers. */
-				bool has_next() const { return msebasic_string_xscope_ss_iterator_type().has_next(); }
-				bool has_previous() const { return msebasic_string_xscope_ss_iterator_type().has_previous(); }
-				void set_to_beginning() { msebasic_string_xscope_ss_iterator_type().set_to_beginning(); }
-				void set_to_end_marker() { msebasic_string_xscope_ss_iterator_type().set_to_end_marker(); }
-				void set_to_next() { msebasic_string_xscope_ss_iterator_type().set_to_next(); }
-				void set_to_previous() { msebasic_string_xscope_ss_iterator_type().set_to_previous(); }
-				xscope_iterator& operator ++() { msebasic_string_xscope_ss_iterator_type().operator ++(); return (*this); }
-				xscope_iterator operator++(int) { xscope_iterator _Tmp = *this; ++*this; return (_Tmp); }
-				xscope_iterator& operator --() { msebasic_string_xscope_ss_iterator_type().operator --(); return (*this); }
-				xscope_iterator operator--(int) { xscope_iterator _Tmp = *this; --*this; return (_Tmp); }
-				void advance(typename _MBS::difference_type n) { msebasic_string_xscope_ss_iterator_type().advance(n); }
-				void regress(typename _MBS::difference_type n) { msebasic_string_xscope_ss_iterator_type().regress(n); }
-				xscope_iterator& operator +=(difference_type n) { msebasic_string_xscope_ss_iterator_type().operator +=(n); return (*this); }
-				xscope_iterator& operator -=(difference_type n) { msebasic_string_xscope_ss_iterator_type().operator -=(n); return (*this); }
-				xscope_iterator operator+(difference_type n) const { auto retval = (*this); retval += n; return retval; }
-				xscope_iterator operator-(difference_type n) const { return ((*this) + (-n)); }
-				typename _MBS::difference_type operator-(const xscope_iterator& _Right_cref) const { return msebasic_string_xscope_ss_iterator_type() - (_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
-				typename _MBS::reference operator*() const { return msebasic_string_xscope_ss_iterator_type().operator*(); }
-				typename _MBS::reference item() const { return operator*(); }
-				typename _MBS::reference previous_item() const { return msebasic_string_xscope_ss_iterator_type().previous_item(); }
-				typename _MBS::pointer operator->() const { return msebasic_string_xscope_ss_iterator_type().operator->(); }
-				typename _MBS::reference operator[](typename _MBS::difference_type _Off) const { return msebasic_string_xscope_ss_iterator_type()[_Off]; }
-				xscope_iterator& operator=(const xscope_iterator& _Right_cref) {
-					msebasic_string_xscope_ss_iterator_type().operator=(_Right_cref.msebasic_string_xscope_ss_iterator_type());
-					return (*this);
-				}
-				xscope_iterator& operator=(const typename _Myt::iterator& _Right_cref) {
-					//msebasic_string_xscope_ss_iterator_type().operator=(_Right_cref.msebasic_string_reg_ss_iterator_type());
-					if (!(_Right_cref.target_container_ptr())
-						|| (!(std::addressof(*(_Right_cref.target_container_ptr())) == std::addressof(*((*this).target_container_ptr()))))) {
-						MSE_THROW(mstdbasic_string_range_error("invalid assignment - mse::mstd::basic_string<>::xscope_iterator"));
-					}
-					(*this).set_to_beginning();
-					(*this) += _Right_cref.position();
-					return (*this);
-				}
-				bool operator==(const xscope_iterator& _Right_cref) const { return msebasic_string_xscope_ss_iterator_type().operator==(_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
-				bool operator!=(const xscope_iterator& _Right_cref) const { return (!(_Right_cref == (*this))); }
-				bool operator<(const xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() < _Right.msebasic_string_xscope_ss_iterator_type()); }
-				bool operator<=(const xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() <= _Right.msebasic_string_xscope_ss_iterator_type()); }
-				bool operator>(const xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() > _Right.msebasic_string_xscope_ss_iterator_type()); }
-				bool operator>=(const xscope_iterator& _Right) const { return (msebasic_string_xscope_ss_iterator_type() >= _Right.msebasic_string_xscope_ss_iterator_type()); }
-				void set_to_item_pointer(const xscope_iterator& _Right_cref) { msebasic_string_xscope_ss_iterator_type().set_to_item_pointer(_Right_cref.msebasic_string_xscope_ss_iterator_type()); }
-				msear_size_t position() const { return msebasic_string_xscope_ss_iterator_type().position(); }
-				auto target_container_ptr() const -> decltype(msebasic_string_xscope_ss_iterator_type().target_container_ptr()) {
-					return msebasic_string_xscope_ss_iterator_type().target_container_ptr();
-				}
-				void xscope_tag() const {}
-				void xscope_iterator_tag() const {}
-				void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
-			private:
-				typename _MBS::xscope_ss_iterator_type m_xscope_ss_iterator;
-				friend class /*_Myt*/basic_string<_Ty, _Traits>;
-				friend class xscope_const_iterator;
-			};
-
 			/* For each (scope) basic_string instance, only one instance of xscope_structure_change_lock_guard may exist at any one
 			time. While an instance of xscope_structure_change_lock_guard exists it ensures that direct (scope) pointers to
 			individual elements in the basic_string do not become invalid by preventing any operation that might resize the basic_string
 			or increase its capacity. Any attempt to execute such an operation would result in an exception. */
-			class xscope_structure_change_lock_guard : public XScopeTagBase {
+			class xscope_structure_change_lock_guard : public mse::us::impl::XScopeTagBase {
 			public:
 				xscope_structure_change_lock_guard(const mse::TXScopeFixedPointer<basic_string>& owner_ptr)
-					: m_MBS_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+					: m_MBS_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(basic_string::s_msebasic_string(owner_ptr))) {}
 #if !defined(MSE_SCOPEPOINTER_DISABLED)
 				xscope_structure_change_lock_guard(const mse::TXScopeItemFixedPointer<basic_string>& owner_ptr)
-					: m_MBS_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+					: m_MBS_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(basic_string::s_msebasic_string(owner_ptr))) {}
 #endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 
 				auto xscope_ptr_to_element(size_type _P) const {
@@ -1091,13 +1117,13 @@ namespace mse {
 			private:
 				typename mse::us::msebasic_string<_Ty, _Traits>::xscope_structure_change_lock_guard m_MBS_xscope_structure_change_lock_guard;
 			};
-			class xscope_const_structure_change_lock_guard : public XScopeTagBase {
+			class xscope_const_structure_change_lock_guard : public mse::us::impl::XScopeTagBase {
 			public:
 				xscope_const_structure_change_lock_guard(const mse::TXScopeFixedConstPointer<basic_string>& owner_ptr)
-					: m_MBS_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(*((*owner_ptr).m_shptr))) {}
+					: m_MBS_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(basic_string::s_msebasic_string(owner_ptr))) {}
 #if !defined(MSE_SCOPEPOINTER_DISABLED)
 				xscope_const_structure_change_lock_guard(const mse::TXScopeItemFixedConstPointer<basic_string>& owner_ptr)
-					: m_MBS_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(*((*owner_ptr).m_shptr))) {}
+					: m_MBS_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(basic_string::s_msebasic_string(owner_ptr))) {}
 #endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 
 				auto xscope_ptr_to_element(size_type _P) const {
@@ -1130,8 +1156,13 @@ namespace mse {
 
 			const _MBS& msebasic_string() const { return (*m_shptr); }
 			_MBS& msebasic_string() { return (*m_shptr); }
+			template<class _TThisPointer>
+			static auto& s_msebasic_string(const _TThisPointer& this_pointer) { return this_pointer->msebasic_string(); }
 
 			std::shared_ptr<_MBS> m_shptr;
+
+			friend xscope_const_iterator;
+			friend xscope_iterator;
 
 			friend struct std::hash<basic_string>;
 			template<class _Ty2, class _Traits2/* = std::char_traits<_Ty2>*/, class _A2/* = std::allocator<_Ty2> */>
@@ -1301,6 +1332,97 @@ namespace mse {
 		}
 #endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 
+	}
+
+	namespace impl {
+
+		/* Some algorithm implementation specializations for mstd::basic_string<>.  */
+
+		/* Specializations of TXScopeRawPointerRAFirstAndLast<> that replace regular iterators with fast (raw pointer) iterators for
+		data types for which it's safe to do so. In this case mstd::basic_string<>. */
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeSpecializedFirstAndLast<mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> >
+			: public TXScopeRawPointerRAFirstAndLast<mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> > {
+		public:
+			typedef TXScopeRawPointerRAFirstAndLast<mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> > base_class;
+			MSE_USING(TXScopeSpecializedFirstAndLast, base_class);
+		};
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeSpecializedFirstAndLast<mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc> >
+			: public TXScopeRawPointerRAFirstAndLast<mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc> > {
+		public:
+			typedef TXScopeRawPointerRAFirstAndLast<mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc> > base_class;
+			MSE_USING(TXScopeSpecializedFirstAndLast, base_class);
+		};
+
+		/* Specializations of TXScopeRangeIterProvider<> that replace regular iterators with fast (raw pointer) iterators for
+		data types for which it's safe to do so. In this case mstd::basic_string<>. */
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeRangeIterProvider<mse::TXScopeItemFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > >
+			: public TXScopeRARangeRawPointerIterProvider<mse::TXScopeItemFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > {
+		public:
+			typedef TXScopeRARangeRawPointerIterProvider<mse::TXScopeItemFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > base_class;
+			MSE_USING(TXScopeRangeIterProvider, base_class);
+		};
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeRangeIterProvider<mse::TXScopeItemFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > >
+			: public TXScopeRARangeRawPointerIterProvider<mse::TXScopeItemFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > {
+		public:
+			typedef TXScopeRARangeRawPointerIterProvider<mse::TXScopeItemFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > base_class;
+			MSE_USING(TXScopeRangeIterProvider, base_class);
+		};
+
+#if !defined(MSE_SCOPEPOINTER_DISABLED)
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeRangeIterProvider<mse::TXScopeFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > >
+			: public TXScopeRARangeRawPointerIterProvider<mse::TXScopeFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > {
+		public:
+			typedef TXScopeRARangeRawPointerIterProvider<mse::TXScopeFixedConstPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > base_class;
+			MSE_USING(TXScopeRangeIterProvider, base_class);
+		};
+		template<class _Elem, class _Traits, class _Alloc>
+		class TXScopeRangeIterProvider<mse::TXScopeFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > >
+			: public TXScopeRARangeRawPointerIterProvider<mse::TXScopeFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > {
+		public:
+			typedef TXScopeRARangeRawPointerIterProvider<mse::TXScopeFixedPointer<mse::mstd::basic_string<_Elem, _Traits, _Alloc> > > base_class;
+			MSE_USING(TXScopeRangeIterProvider, base_class);
+		};
+#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
+
+	}
+}
+
+namespace std {
+
+	/* Overloads of standard algorithm functions for mstd::basic_string<> iterators. */
+
+	template<class _Pr, class _Elem, class _Traits, class _Alloc>
+	inline auto find_if(mse::mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> _First, const mse::mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> _Last, _Pr _Pred) -> mse::mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> {
+		auto pred2 = [&_Pred](auto ptr) { return _Pred(*ptr); };
+		return mse::find_if_ptr(_First, _Last, pred2);
+	}
+	template<class _Pr, class _Elem, class _Traits, class _Alloc>
+	inline auto find_if(const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _First, const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _Last, _Pr _Pred) -> mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc> {
+		auto pred2 = [&_Pred](auto ptr) { return _Pred(*ptr); };
+		return mse::find_if_ptr(_First, _Last, pred2);
+	}
+
+	template<class _Fn, class _Elem, class _Traits, class _Alloc>
+	inline _Fn for_each(mse::mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> _First, mse::mstd::Tbasic_string_xscope_const_iterator<_Elem, _Traits, _Alloc> _Last, _Fn _Func) {
+		auto func2 = [&_Func](auto ptr) { _Func(*ptr); };
+		mse::for_each_ptr(_First, _Last, func2);
+		return (_Func);
+	}
+	template<class _Fn, class _Elem, class _Traits, class _Alloc>
+	inline _Fn for_each(const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _First, const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _Last, _Fn _Func) {
+		auto func2 = [&_Func](auto ptr) { _Func(*ptr); };
+		mse::for_each_ptr(_First, _Last, func2);
+		return (_Func);
+	}
+
+	template<class _Elem, class _Traits, class _Alloc>
+	inline void sort(const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _First, const mse::mstd::Tbasic_string_xscope_iterator<_Elem, _Traits, _Alloc>& _Last) {
+		mse::sort(_First, _Last);
 	}
 }
 

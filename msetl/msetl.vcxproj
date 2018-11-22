@@ -146,6 +146,8 @@
       <SDLCheck>true</SDLCheck>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -162,6 +164,8 @@
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -179,6 +183,8 @@
       <SDLCheck>true</SDLCheck>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -199,6 +205,8 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -219,6 +227,8 @@
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -240,6 +250,8 @@
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <DisableLanguageExtensions>false</DisableLanguageExtensions>
       <EnablePREfast>false</EnablePREfast>
+      <LanguageStandard>
+      </LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -252,6 +264,7 @@
     <ClInclude Include="msealgorithm.h" />
     <ClInclude Include="mseany.h" />
     <ClInclude Include="mseasyncshared.h" />
+    <ClInclude Include="msecregistered.h" />
     <ClInclude Include="mseivector.h" />
     <ClInclude Include="mselegacyhelpers.h" />
     <ClInclude Include="msemsearray.h" />
@@ -260,6 +273,7 @@
     <ClInclude Include="msemstdarray.h" />
     <ClInclude Include="msemstdstring.h" />
     <ClInclude Include="msemstdvector.h" />
+    <ClInclude Include="msenorad.h" />
     <ClInclude Include="mseoptional.h" />
     <ClInclude Include="msepointerbasics.h" />
     <ClInclude Include="msepoly.h" />
@@ -270,18 +284,16 @@
     <ClInclude Include="mseregistered.h" />
     <ClInclude Include="mserelaxedregistered.h" />
     <ClInclude Include="msescope.h" />
+    <ClInclude Include="msestaticimmutable.h" />
+    <ClInclude Include="msethreadlocal.h" />
     <ClInclude Include="msetl.h" />
     <ClInclude Include="msetl_example2.h" />
+    <ClInclude Include="msetl_example_defs.h" />
     <ClInclude Include="msevector_test.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="mserelaxedregistered.cpp" />
     <ClCompile Include="msetl_example.cpp" />
     <ClCompile Include="msetl_example2.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="msetl_blurb.odt" />
-    <None Include="msetl_blurb.pdf" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="LICENSE_1_0.txt" />
