@@ -37,6 +37,7 @@ compiles with gcc fasta.cpp -std=c++11 -O2
 #include "msescope.h"
 #include "msepoly.h"
 #include "msealgorithm.h"
+#include "msestaticimmutable.h"
 
 struct IUB
 {
@@ -47,7 +48,8 @@ struct IUB
 no pointer/reference (or mutable) members). */
 typedef mse::us::TUserDeclaredAsyncShareableObj<IUB> ShareableIUB;
 
-const mse::TXScopeObj<mse::nii_string> alu =
+/* Here we're declaring a global immutable (i.e. const) variable. The type must be recognized or declared as safely shareable. */
+MSE_RSV_DECLARE_GLOBAL_IMMUTABLE(mse::nii_string) alu =
 {
 	"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
 	"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
@@ -57,7 +59,6 @@ const mse::TXScopeObj<mse::nii_string> alu =
 	"AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC"
 	"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 };
-auto g_alu_shimptr = mse::make_asyncsharedv2immutable<mse::nii_string>(alu);
 
 template<class iterator_type>
 void make_cumulative(iterator_type first, iterator_type last)
@@ -348,7 +349,7 @@ void make(const mse::nii_string/*const char* */desc, mse::CInt n, generator_make
 }
 
 auto make_alu_repeat_generator() {
-	return make_repeat_generator(g_alu_shimptr->ss_cbegin(g_alu_shimptr), g_alu_shimptr->ss_cend(g_alu_shimptr));
+	return make_repeat_generator(mse::make_begin_const_iterator(&alu), mse::make_end_const_iterator(&alu));
 }
 auto make_iub_random_generator() {
 	return make_random_generator(nullptr, nullptr);
