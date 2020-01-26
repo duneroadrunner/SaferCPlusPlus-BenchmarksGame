@@ -5,7 +5,7 @@ Apr 2018
 
 This repository contains benchmarks originally from ["The Computer Language Benchmarks Game"](https://duckduckgo.com/?q=The+Computer+Language+Benchmarks+Game&ia=web), implemented in [SaferCPlusPlus](https://github.com/duneroadrunner/SaferCPlusPlus), a memory safe dialect/subset of C++. 
 
-The orginal implementations using traditional (unsafe) C++ are in the subdirectories named "unchecked". The versions in the subdirectories named "strict" are made "SaferCPlusPlus compliant" by eliminating (to the extent possible) potentially (memory) unsafe C++ elements, generally substituting them with safe replacements provided by the SaferCPlusPlus library. The subdirectories named "checked" contain versions that are partially SaferCPlusPlus compliant, though at this point the "checked" implementations are somewhat out-of-date.
+The orginal implementations using traditional (unsafe) C++ are in the subdirectories named "unchecked". The versions in the subdirectories named "strict" are made "SaferCPlusPlus compliant" by eliminating (to the extent possible) potentially (memory) unsafe C++ elements, generally substituting them with safe replacements provided by the SaferCPlusPlus library.
 
 In addition to a sample measure of SaferCPlusPlus' performance cost, the implementations in this repository can be useful as code examples that help demonstrate how to use the SaferCPlusPlus library to add memory safety to your C++ code while preserving maximal performance.
 
