@@ -4,47 +4,30 @@
 // License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
 
+#ifndef EXCLUDE_MSETL_EXAMPLE2
 
 #include "msetl_example_defs.h"
 
 #include "msetl_example2.h"
-//include "msetl.h"
 #include "mseregistered.h"
 #include "msecregistered.h"
-#include "msenorad.h"
-#include "mserefcounting.h"
 #include "msescope.h"
-#include "mseasyncshared.h"
 #include "msepoly.h"
 #include "msemsearray.h"
 #include "msemstdarray.h"
 #include "msemsevector.h"
 #include "msemstdvector.h"
-#include "mseivector.h"
-#include "msevector_test.h"
-#include "mseprimitives.h"
-#include "mselegacyhelpers.h"
+#include "msemsestring.h"
 #include "msemstdstring.h"
+#include "mselegacyhelpers.h"
 #include "msealgorithm.h"
 #include "msethreadlocal.h"
 #include "msestaticimmutable.h"
-#include <algorithm>
-#include <iostream>
-#include <ctime>
-#include <ratio>
-#include <chrono>
-//include <thread>
-#include <sstream>
-#include <future>
+#include "mseoptional.h"
+#include "msetuple.h"
 
-/* This block of includes is required for the mse::TRegisteredRefWrapper example */
-#include <algorithm>
-#include <list>
-#include <vector>
 #include <iostream>
-#include <numeric>
-#include <random>
-#include <functional>
+#include <sstream>
 
 
 #ifdef _MSC_VER
@@ -72,60 +55,16 @@
 
 class J {
 public:
-	template<class _TAsyncSharedReadWriteAccessRequester>
-	static double foo7(_TAsyncSharedReadWriteAccessRequester A_ashar) {
-		auto t1 = std::chrono::high_resolution_clock::now();
-		/* A_ashar.readlock_ptr() will block until it can obtain a read lock. */
-		auto ptr1 = A_ashar.readlock_ptr(); // while ptr1 exists it holds a (read) lock on the shared object
-		auto t2 = std::chrono::high_resolution_clock::now();
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-		auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-		auto timespan_in_seconds = time_span.count();
-		auto thread_id = std::this_thread::get_id();
-		//std::cout << "thread_id: " << thread_id << ", time to acquire read pointer: " << timespan_in_seconds << " seconds.";
-		//std::cout << std::endl;
-		return timespan_in_seconds;
-	}
-	/* This function takes a "random access section" (which is like an "array_view" or gsl::span) as its parameter. */
-	template<class _TStringRASection>
-	static void foo8(_TStringRASection ra_section) {
-		size_t delay_in_milliseconds = 3000/*arbitrary*/;
-		if (1 <= ra_section.size()) {
-			delay_in_milliseconds /= mse::as_a_size_t(ra_section.size());
-		}
-		for (size_t i = 0; i < ra_section.size(); i += 1) {
-			auto now1 = std::chrono::system_clock::now();
-			auto tt = std::chrono::system_clock::to_time_t(now1);
-
-			/* Just trying to obtain a string with the current time and date. The standard library doesn't yet
-			seem to provide a safe, portable way to do this. */
-#ifdef _MSC_VER
-			static const size_t buffer_size = 64;
-			char buffer[buffer_size];
-			buffer[0] = '\0';
-			ctime_s(buffer, buffer_size, &tt);
-#else /*_MSC_VER*/
-			auto buffer = ctime(&tt);
-#endif /*_MSC_VER*/
-
-			std::string now_str(buffer);
-			ra_section[i] = now_str;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(delay_in_milliseconds));
-		}
-	}
-	/* This function just obtains a writelock_ra_section from the given "splitter access requester" and calls the given
-	function with the writelock_ra_section as the first argument. */
-	template<class _TAsyncSplitterRASectionReadWriteAccessRequester, class _TFunction, class... Args>
-	static void invoke_with_writelock_ra_section1(_TAsyncSplitterRASectionReadWriteAccessRequester ar, _TFunction function1, Args&&... args) {
-		function1(ar.writelock_ra_section(), args...);
-	}
-
 	template<typename _TParam>
 	static auto foo10(_TParam param) {
-		auto l_obj = param;
+		_TParam l_obj = param;
+
+		auto ret_ptr = &l_obj;
+		/* ret_ptr may be a smart pointer if the 'operator&' is overloaded.*/
+		/* If ret_ptr is a scope pointer (or native pointer) it would be unsafe to return it. In those cases the
+		 'mse::return_value(ret_ptr)' expression will induce a compile error. */
 		/* Functions that could return a scope type need to wrap their return value with the return_value() function. */
-		return mse::return_value(mse::pointer_to(l_obj));
+		return mse::return_value(ret_ptr);
 	}
 
 	template<class _TRASection>
@@ -151,44 +90,6 @@ public:
 		return retval;
 	}
 
-	template<class _TAPointer>
-	static void foo17(_TAPointer a_ptr) {
-		{
-			auto now1 = std::chrono::system_clock::now();
-			auto tt = std::chrono::system_clock::to_time_t(now1);
-
-			/* Just trying to obtain a string with the current time and date. The standard library doesn't yet
-			seem to provide a safe, portable way to do this. */
-#ifdef _MSC_VER
-			static const size_t buffer_size = 64;
-			char buffer[buffer_size];
-			buffer[0] = '\0';
-			ctime_s(buffer, buffer_size, &tt);
-#else /*_MSC_VER*/
-			auto buffer = ctime(&tt);
-#endif /*_MSC_VER*/
-
-			std::string now_str(buffer);
-			a_ptr->s = now_str;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-	}
-	template<class _TAPointer>
-	static void foo17b(_TAPointer a_ptr) {
-		static int s_count = 0;
-		s_count += 1;
-		a_ptr->s = std::to_string(s_count);
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	template<class _TConstPointer, class _TPointer>
-	static void foo18(_TConstPointer src_ptr, _TPointer dst_ptr) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		dst_ptr->s = src_ptr->s;
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-
 	/* This function will be used to demonstrate using rsv::as_an_fparam() to enable template functions to accept scope
 	random access sections that reference temporary objects. */
 	template<class _TRASection1, class _TRASection2>
@@ -197,20 +98,145 @@ public:
 		auto l_xscope_ra_csection2 = mse::rsv::as_an_fparam(xscope_ra_csection2);
 		return (l_xscope_ra_csection1.size() > l_xscope_ra_csection2.size()) ? false : true;
 	}
+
+#ifdef MSE_HAS_CXX17
+	/* While not encouraging their use, this is how you might declare an immutable static member (in C++17 and later). */
+	inline MSE_DECLARE_STATIC_IMMUTABLE(mse::mtnii_string) sm_simm_string = "abc";
+#endif // MSE_HAS_CXX17
+
 };
 
 MSE_DECLARE_THREAD_LOCAL_GLOBAL(mse::mstd::string) tlg_string1 = "some text";
-MSE_RSV_DECLARE_GLOBAL_IMMUTABLE(mse::nii_string) gimm_string1 = "some text";
+MSE_RSV_DECLARE_GLOBAL_IMMUTABLE(mse::mtnii_string) gimm_string1 = "some text";
+
 
 void msetl_example2() {
+	{
+		/**********************/
+		/*   mtnii_vector<>   */
+		/**********************/
+
+		/* mtnii_vector<> is a safe vector that is eligible to be (safely) shared between asynchronous threads. */
+
+		typedef mse::mtnii_vector<mse::mtnii_string> mtnii_vector1_t;
+
+		mse::TRegisteredObj<mtnii_vector1_t> rg_vo1;
+		for (size_t i = 0; i < 5; i += 1) {
+			rg_vo1.push_back("some text");
+		}
+		mse::TRegisteredPointer<mtnii_vector1_t> vo1_regptr1 = &rg_vo1;
+
+		/* mtnii_vector<> does not have a begin() member function that returns an "implicit" iterator. You can obtain an
+		iterator using the make_begin_iterator() et al. functions, which take a (safe) pointer to the container. */
+		auto iter1 = mse::make_begin_iterator(vo1_regptr1);
+		auto citer1 = mse::make_end_const_iterator(vo1_regptr1);
+		citer1 = iter1;
+		rg_vo1.emplace(vo1_regptr1, citer1, "some other text");
+		rg_vo1.insert(vo1_regptr1, citer1, "some other text");
+		mse::mtnii_string str1 = "some other text";
+		rg_vo1.insert(vo1_regptr1, citer1, str1);
+
+		class A {
+		public:
+			A() {}
+			int m_i = 0;
+		};
+		/* Here we're declaring that A can be safely shared between asynchronous threads. */
+		typedef mse::rsv::TAsyncShareableAndPassableObj<A> shareable_A_t;
+
+		/* When the element type of an mtnii_vector<> is marked as "async shareable", the mtnii_vector<> itself is
+		(automatically) marked as async shareable as well and can be safely shared between asynchronous threads
+		using "access requesters". */
+		auto access_requester1 = mse::make_asyncsharedv2readwrite<mse::mtnii_vector<shareable_A_t>>();
+		auto access_requester2 = mse::make_asyncsharedv2readwrite<mtnii_vector1_t>();
+
+		/* If the element type of an mtnii_vector<> is not marked as "async shareable", then neither is the
+		mtnii_vector<> itself. So attempting to create an "access requester" using it would result in a compile
+		error. */
+		//auto access_requester3 = mse::make_asyncsharedv2readwrite<mse::mtnii_vector<A>>();
+		//auto access_requester4 = mse::make_asyncsharedv2readwrite<mse::mtnii_vector<mse::mstd::string>>();
+
+		typedef mse::mstd::vector<mse::mtnii_string> vector1_t;
+		vector1_t vo2 = { "a", "b", "c" };
+		/* mstd::vector<>s, for example, are not safely shareable between threads. But if its element type is
+		safely shareable, then the contents of the mse::mstd::vector<>, can be swapped with a corresponding
+		shareable mtnii_vector<>. Note that vector swaps are intrinsically fast operations. */
+		std::swap(vo2, *(access_requester2.writelock_ptr()));
+
+		{
+			/* If the vector is declared as a "scope" object (which basically indicates that it is declared
+			on the stack), then you can use "scope" iterators. While there are limitations on when they can
+			be used, scope iterators would be the preferred iterator type where performance is a priority
+			as they don't require extra run-time overhead to ensure that the vector has not been prematurely
+			deallocated. */
+
+			/* Here we're declaring a vector as a scope object. */
+			mse::TXScopeObj<mse::mtnii_vector<int> > vector1_xscpobj = mse::mtnii_vector<int>{ 1, 2, 3 };
+
+			{
+				/* Here we're obtaining scope iterators to the vector. */
+				auto xscp_iter1 = mse::make_xscope_begin_iterator(&vector1_xscpobj);
+				auto xscp_iter2 = mse::make_xscope_end_iterator(&vector1_xscpobj);
+
+				std::sort(xscp_iter1, xscp_iter2);
+
+				auto xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
+				xscp_citer3 = xscp_iter1;
+				xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
+				xscp_citer3 += 2;
+				auto res1 = *xscp_citer3;
+				auto res2 = xscp_citer3[0];
+
+				/* Note that scope iterators to vectors (and other dynamic containers), "lock the structure" of the container
+				so that, for example, it cannot be resized. This allows us to obtain a scope pointer to the (lvalue) iterator's
+				target element. */
+				auto xscp_ptr1 = mse::xscope_pointer(xscp_citer3);
+				auto res3 = *xscp_ptr1;
+			}
+			/* After all the scope pointers have gone out of scope, you may again perform operations that affect the container's
+			"structure" (i.e. size or capacity). */
+			vector1_xscpobj.push_back(4);
+		}
+	}
+
+	{
+		/**********************/
+		/*   stnii_vector<>   */
+		/**********************/
+
+		/* stnii_vector<> is just a version of mtnii_vector<> that is not eligible to be shared between threads (and has
+		a little less overhead as a result). */
+
+		mse::TXScopeObj<mse::stnii_vector<int> > vector1_xscpobj = mse::stnii_vector<int>{ 1, 2, 3 };
+
+		{
+			mse::TXScopeItemFixedConstPointer<mse::stnii_vector<int> > xscptr = &vector1_xscpobj;
+			auto xscp_citer1 = mse::make_xscope_begin_const_iterator(xscptr);
+			xscp_citer1 += 2;
+			auto xscp_cptr1 = mse::xscope_const_pointer(xscp_citer1);
+			auto res1 = *xscp_cptr1;
+		}
+		vector1_xscpobj.push_back(4);
+
+		/* stnii_vector<>s can be (efficiently) swapped with mtnii_vector<>s. */
+		auto mtniiv1 = mse::mtnii_vector<int>();
+		std::swap(vector1_xscpobj, mtniiv1);
+		/* Or mstd::vector<>s. */
+		auto mstdv1 = mse::mstd::vector<int>();
+		std::swap(vector1_xscpobj, mstdv1);
+	}
+
 	{
 		/********************/
 		/*   nii_vector<>   */
 		/********************/
 
-		/* nii_vector<> is a safe vector designed for safe sharing between asynchronous threads. */
+		/* nii_vector<> is another safe vector that is eligible to be (safely) shared between asynchronous threads. It
+		doesn't use a (costly) thread-safe (atomic) "structure locking" mechanism like mse::mtnii_vector<> does, but
+		therefore it doesn't supports "structure locking" (and therefore obtaining a scope pointer to an element) via
+		its scope const iterators, only its scope non-const iterators. */
 
-		typedef mse::nii_vector<mse::nii_string> nii_vector1_t;
+		typedef mse::nii_vector<mse::mtnii_string> nii_vector1_t;
 
 		mse::TRegisteredObj<nii_vector1_t> rg_vo1;
 		for (size_t i = 0; i < 5; i += 1) {
@@ -225,7 +251,7 @@ void msetl_example2() {
 		citer1 = iter1;
 		rg_vo1.emplace(vo1_regptr1, citer1, "some other text");
 		rg_vo1.insert(vo1_regptr1, citer1, "some other text");
-		mse::nii_string str1 = "some other text";
+		mse::mtnii_string str1 = "some other text";
 		rg_vo1.insert(vo1_regptr1, citer1, str1);
 
 		class A {
@@ -234,7 +260,7 @@ void msetl_example2() {
 			int m_i = 0;
 		};
 		/* Here we're declaring that A can be safely shared between asynchronous threads. */
-		typedef mse::us::TUserDeclaredAsyncShareableObj<A> shareable_A_t;
+		typedef mse::rsv::TAsyncShareableAndPassableObj<A> shareable_A_t;
 
 		/* When the element type of an nii_vector<> is marked as "async shareable", the nii_vector<> itself is
 		(automatically) marked as async shareable as well and can be safely shared between asynchronous threads
@@ -248,7 +274,7 @@ void msetl_example2() {
 		//auto access_requester3 = mse::make_asyncsharedv2readwrite<mse::nii_vector<A>>();
 		//auto access_requester4 = mse::make_asyncsharedv2readwrite<mse::nii_vector<mse::mstd::string>>();
 
-		typedef mse::mstd::vector<mse::nii_string> vector1_t;
+		typedef mse::mstd::vector<mse::mtnii_string> vector1_t;
 		vector1_t vo2 = { "a", "b", "c" };
 		/* mstd::vector<>s, for example, are not safely shareable between threads. But if its element type is
 		safely shareable, then the contents of the mse::mstd::vector<>, can be swapped with a corresponding
@@ -262,31 +288,52 @@ void msetl_example2() {
 			as they don't require extra run-time overhead to ensure that the vector has not been prematurely
 			deallocated. */
 
-			/* Here we're declaring an vector as a scope object. */
+			/* Here we're declaring a vector as a scope object. */
 			mse::TXScopeObj<mse::nii_vector<int> > vector1_xscpobj = mse::nii_vector<int>{ 1, 2, 3 };
 
-			/* Here we're obtaining a scope iterator to the vector. */
-			auto xscp_iter1 = mse::make_xscope_begin_iterator(&vector1_xscpobj);
-			auto xscp_iter2 = mse::make_xscope_end_iterator(&vector1_xscpobj);
-
-			std::sort(xscp_iter1, xscp_iter2);
-
-			auto xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
-			xscp_citer3 = xscp_iter1;
-			xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
-			xscp_citer3 += 2;
-			auto res1 = *xscp_citer3;
-			auto res2 = xscp_citer3[0];
-
 			{
-				/* In order to obtain a direct scope pointer to a vector element, you first need to instantiate a "structure lock"
-				object, which "locks" the vector to ensure that no resize (or reserve) operation that might cause a scope pointer
-				to become invalid is performed. */
-				auto xxscp_vector1_change_lock_guard = mse::make_xscope_vector_size_change_lock_guard(&vector1_xscpobj);
-				auto xscp_ptr1 = xxscp_vector1_change_lock_guard.xscope_ptr_to_element(2);
-				auto res4 = *xscp_ptr1;
+				/* Here we're obtaining a scope iterator to the vector. */
+				auto xscp_iter1 = mse::make_xscope_begin_iterator(&vector1_xscpobj);
+				auto xscp_iter2 = mse::make_xscope_end_iterator(&vector1_xscpobj);
+
+				std::sort(xscp_iter1, xscp_iter2);
+
+				/* Note that nii_vector<>'s scope non-const iterators "lock the structure" of the container so that, for
+				example, it cannot be resized. This allows us to obtain a scope pointer to the (lvalue) iterator's target
+				element. */
+				auto xscp_ptr1 = mse::xscope_pointer(xscp_iter1);
+				auto res3 = *xscp_ptr1;
+
+				auto xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
+				xscp_citer3 = xscp_iter1;
+				xscp_citer3 = mse::make_xscope_begin_const_iterator(&vector1_xscpobj);
+				xscp_citer3 += 2;
+				auto res1 = *xscp_citer3;
+				auto res2 = xscp_citer3[0];
 			}
+			/* After all the scope pointers have gone out of scope, you may again perform operations that affect the container's
+			"structure" (i.e. size or capacity). */
 			vector1_xscpobj.push_back(4);
+		}
+		{
+			/* Unfortunately, you cannot obtain a direct scope const pointer to an nii_vector<> element from a scope const
+			pointer to the nii_vector<>. (nii_vector<> is the only one of the library's vectors that has this shortcoming.)
+			However, for vectors that are access controlled with an "exclusive writer" access policy, you can use an
+			"exclusive writer" const pointer to obtain a direct scope const pointer to a vector element. */
+			auto xs_ew_niivec1 = mse::make_xscope(mse::make_exclusive_writer(mse::nii_vector<int>{ 1, 2, 3 }));
+			// which can also be written as:
+			// mse::TXScopeObj<mse::TExclusiveWriterObj<mse::nii_vector<int> > > xs_ew_niivec1 = mse::nii_vector<int>{ 1, 2, 3 };
+			{
+				auto xs_ew_cptr1 = mse::make_xscope_access_controlled_const_pointer(xs_ew_niivec1);
+				/* The following scope iterator is of a type that reflects that it was constructed from an "exclusive writer"
+				const pointer. */
+				auto xs_citer1 = mse::make_xscope_begin_const_iterator(xs_ew_cptr1);
+				xs_citer1 += 2;
+				/* We can obtain a (zero-overhead) scope pointer from the (lvalue) iterator. */
+				auto xs_cptr1 = mse::xscope_const_pointer(xs_citer1);
+				auto val1 = *xs_cptr1;
+			}
+			mse::make_xscope_access_controlled_pointer(xs_ew_niivec1)->push_back(4);
 		}
 	}
 
@@ -467,12 +514,11 @@ void msetl_example2() {
 			mse::TXScopeAnyRandomAccessIterator<int> ra_iter2 = std_array1.end();
 			auto res5 = ra_iter2 - ra_iter1;
 			ra_iter1 = ra_iter2;
-			int q = 3;
 		}
 
-		mse::TXScopeObj<mse::mstd::array<int, 4>> mstd_array3_scbobj = mse::mstd::array<int, 4>({ 1, 2, 3, 4 });
-		auto mstd_array_scpiter3 = mse::mstd::make_xscope_begin_iterator(&mstd_array3_scbobj);
-		//mstd_array_scpiter3 = mstd_array3_scbobj.begin();
+		mse::TXScopeObj<mse::mstd::array<int, 4> > mstd_array3_scpobj = mse::mstd::array<int, 4>({ 1, 2, 3, 4 });
+		auto mstd_array_scpiter3 = mse::mstd::make_xscope_begin_iterator(&mstd_array3_scpobj);
+		//mstd_array_scpiter3 = mstd_array3_scpobj.begin();
 		++mstd_array_scpiter3;
 		B::foo1(mstd_array_scpiter3);
 
@@ -498,27 +544,270 @@ void msetl_example2() {
 	}
 
 	{
+		/********************************************/
+		/*  TXScopeCSSSXSTERandomAccessIterator<>   */
+		/*  & TXScopeCSSSXSTERandomAccessSection<>  */
+		/********************************************/
+
+		/* TXScopeCSSSXSTERandomAccessIterator<> and TXScopeCSSSXSTERandomAccessSection<> are "type-erased" template classes
+		that function much like TXScopeAnyRandomAccessIterator<> and TXScopeAnyRandomAccessSection<> in that they can be
+		used to enable functions to take as arguments iterators or sections of various container types (like an arrays or
+		vectors) without making the functions in to template functions. But in this case there are limitations on what types
+		can be converted. In exchange for these limitations, these types require less overhead. The "CSSSXSTE" part of the
+		typenames stands for "Contiguous Sequence, Static Structure, XScope, Type-Erased". So the first restriction is that
+		the target container must be recognized as a "contiguous sequence" (basically an array or vector). It also must be
+		recognized as having a "static structure". This essentially means that the container cannot be resized. Note that
+		while vectors support resizing, the ones in the library can be "structure locked" at run-time to ensure that they
+		are not resized (i.e. have a "static structure") during certain periods. And only the "scope" versions of the
+		iterators and sections are supported. */
+
+		auto xs_mstd_array1 = mse::make_xscope(mse::mstd::array<int, 4>{ 1, 2, 3, 4 });
+		auto xs_msearray2 = mse::make_xscope(mse::us::msearray<int, 5>{ 5, 6, 7, 8, 9 });
+		auto xs_mstd_vec1 = mse::make_xscope(mse::mstd::vector<int>{ 10, 11, 12, 13, 14 });
+		class B {
+		public:
+			static void foo1(mse::TXScopeCSSSXSTERandomAccessIterator<int> ra_iter1) {
+				ra_iter1[1] = 15;
+			}
+			static int foo2(mse::TXScopeCSSSXSTERandomAccessConstIterator<int> const_ra_iter1) {
+				const_ra_iter1 += 2;
+				--const_ra_iter1;
+				const_ra_iter1--;
+				return const_ra_iter1[2];
+			}
+			static void foo3(mse::TXScopeCSSSXSTERandomAccessSection<int> ra_section) {
+				for (mse::TXScopeCSSSXSTERandomAccessSection<int>::size_type i = 0; i < ra_section.size(); i += 1) {
+					ra_section[i] = 0;
+				}
+			}
+			static int foo4(mse::TXScopeCSSSXSTERandomAccessConstSection<int> const_ra_section) {
+				int retval = 0;
+				for (mse::TXScopeCSSSXSTERandomAccessSection<int>::size_type i = 0; i < const_ra_section.size(); i += 1) {
+					retval += const_ra_section[i];
+				}
+				return retval;
+			}
+			static int foo5(mse::TXScopeCSSSXSTERandomAccessConstSection<int> const_ra_section) {
+				int retval = 0;
+				for (const auto& const_item : const_ra_section) {
+					retval += const_item;
+				}
+				return retval;
+			}
+		};
+
+		auto xs_mstd_array_iter1 = mse::make_xscope_begin_iterator(&xs_mstd_array1);
+		xs_mstd_array_iter1++;
+		auto res1 = B::foo2(xs_mstd_array_iter1);
+		B::foo1(xs_mstd_array_iter1);
+
+		auto xs_msearray_const_iter2 = mse::make_xscope_begin_const_iterator(&xs_msearray2);
+		xs_msearray_const_iter2 += 2;
+		auto res2 = B::foo2(xs_msearray_const_iter2);
+
+		auto xs_mstd_vec1_citer1 = mse::make_xscope_begin_const_iterator(&xs_mstd_vec1);
+		auto res3 = B::foo2(xs_mstd_vec1_citer1);
+		/*
+		Note that attempting to combine the previous two lines into a single expression like so:
+		auto res3b = B::foo2(mse::make_xscope_begin_const_iterator(&xs_mstd_vec1));
+		is not supported and would result in a compile error.
+
+		In the case of dynamic containers, like vectors and strings, the (scope) iterators can only be converted to
+		TXScopeCSSSXSTERandomAccessIterator<>s if they are lvalues, not temporaries/rvalues. This is because scope iterators
+		hold a "structure lock" that prevents the container from being resized. If the scope iterator you're attempting to
+		convert from is a temporary (rvalue) one, then the structure lock would be just as temporary and it would not be safe
+		to create a TXScopeCSSSXSTERandomAccessIterator<> that outlives the period when the container is "structure locked".
+		"Non-resizable" containers, like arrays, do not have the same issue, so this restriction does not apply to their
+		(scope) iterators.
+		*/
+
+		auto xs_mstd_vec1_citer2 = ++mse::make_xscope_begin_iterator(&xs_mstd_vec1);
+		B::foo1(xs_mstd_vec1_citer2);
+		auto xs_mstd_vec1_iter1 = mse::make_xscope_begin_iterator(&xs_mstd_vec1);
+		auto res4 = B::foo2(xs_mstd_vec1_iter1);
+
+		auto xs_mstd_vec1_begin_citer1 = mse::make_xscope_begin_iterator(&xs_mstd_vec1);
+		mse::TXScopeCSSSXSTERandomAccessIterator<int> xs_te_iter1 = xs_mstd_vec1_begin_citer1;
+		auto xs_mstd_vec1_end_citer1 = mse::make_xscope_end_iterator(&xs_mstd_vec1);
+		mse::TXScopeCSSSXSTERandomAccessIterator<int> xs_te_iter2 = xs_mstd_vec1_end_citer1;
+		auto res5 = xs_te_iter2 - xs_te_iter1;
+		xs_te_iter1 = xs_te_iter2;
+
+		{
+			auto std_array1 = mse::make_xscope(std::array<int, 4>{ 1, 2, 3, 4 });
+			mse::TXScopeCSSSXSTERandomAccessIterator<int> xs_te_iter1(mse::make_xscope_begin_iterator(&std_array1));
+			mse::TXScopeCSSSXSTERandomAccessIterator<int> xs_te_iter2 = mse::make_xscope_end_iterator(&std_array1);
+			auto res5 = xs_te_iter2 - xs_te_iter1;
+			xs_te_iter1 = xs_te_iter2;
+		}
+
+		mse::TXScopeObj<mse::mstd::array<int, 4> > mstd_array3_scpobj = mse::mstd::array<int, 4>({ 1, 2, 3, 4 });
+		auto mstd_array_scpiter3 = mse::mstd::make_xscope_begin_iterator(&mstd_array3_scpobj);
+		++mstd_array_scpiter3;
+		B::foo1(mstd_array_scpiter3);
+
+		mse::TXScopeCSSSXSTERandomAccessSection<int> xscp_ra_section1(xs_mstd_array_iter1++, 2);
+		B::foo3(xscp_ra_section1);
+
+		auto xs_mstd_vec_iter1 = mse::make_xscope_begin_iterator(&xs_mstd_vec1);
+		mse::TXScopeCSSSXSTERandomAccessSection<int> xscp_ra_section2(++xs_mstd_vec_iter1, 3);
+		/*
+		Note that had we instead used the postfix increment operator on the xs_mstd_vec_iter1 argument in the previous line
+		like so:
+		mse::TXScopeCSSSXSTERandomAccessSection<int> xscp_ra_section2b(xs_mstd_vec_iter1++, 3);
+		we would have gotten a compile error. That's because unlike the prefix increment operator, the postfix increment
+		operator returns a temporary (rvalue) copy of the iterator, and as noted earlier, in the case of dynamic containers,
+		like vectors and strings, conversion/construction from temporary (rvalue) versions of their iterators could be unsafe
+		and is not supported.
+		*/
+
+		auto res6 = B::foo5(xscp_ra_section2);
+		B::foo3(xscp_ra_section2);
+		auto res7 = B::foo4(xscp_ra_section2);
+
+		auto xscp_ra_section1_xscp_iter1 = xscp_ra_section1.xscope_begin();
+		auto xscp_ra_section1_xscp_iter2 = xscp_ra_section1.xscope_end();
+		auto res8 = xscp_ra_section1_xscp_iter2 - xscp_ra_section1_xscp_iter1;
+		bool res9 = (xscp_ra_section1_xscp_iter1 < xscp_ra_section1_xscp_iter2);
+
+		auto xs_ra_section1 = mse::make_xscope_random_access_section(xs_mstd_array_iter1, 2);
+		B::foo3(xs_ra_section1);
+		auto xs_ra_const_section2 = mse::make_xscope_random_access_const_section(mse::make_xscope_begin_const_iterator(&xs_mstd_vec1), 2);
+		B::foo4(xs_ra_const_section2);
+
+		auto nii_array4_scpobj = mse::make_xscope(mse::nii_array<int, 4>{ 1, 2, 3, 4 });
+		auto xscp_ra_section3 = mse::make_xscope_csssxste_random_access_section(&nii_array4_scpobj);
+	}
+
+	{
 		/****************/
 		/*  optional<>  */
 		/****************/
+
+		{
+			/* mstd::optional<> is essentially just a safe implementation of std::optional<>. But you may, on occasion, also
+			need a (safe) pointer that directly targets the contained element. You could make the element type a "registered"
+			or "norad" object. Alternatively, you can obtain a safe pointer to the contained element from a pointer to the
+			optional<> object like so: */
+			auto opt1_refcptr = mse::make_refcounting<mse::mstd::optional<mse::mstd::string> >("abc");
+			auto elem_ptr1 = mse::make_optional_element_pointer(opt1_refcptr);
+			auto val1 = *elem_ptr1;
+		}
+		{
+			/* More commonly, the optional<> object might be declared as a scope object. */
+			auto xs_opt1 = mse::make_xscope(mse::mstd::make_optional(mse::mstd::string("abc")));
+			// which can also be written as
+			// auto xs_opt1 = mse::TXScopeObj<mse::mstd::optional<mse::mstd::string> >("abc");
+
+			auto xs_elem_ptr1 = mse::make_xscope_optional_element_pointer(&xs_opt1);
+
+			/* Note that the scope version of the "optional element pointer", like scope vector iterators, has the side-effect,
+			while it exists, of "locking" the optional<> (scope) object so as to prevent any operation that might destroy the
+			contained element. This property allows us to obtain a "regular" scope pointer to the element from the scope
+			"optional element pointer". */
+
+			auto xs_ptr1 = mse::xscope_pointer(xs_elem_ptr1);
+			auto val1 = *xs_ptr1;
+		}
+		{
+			/* The reason is subtle, but the implementation mstd::optional<> uses to support the ability to obtain a scope
+			(const) pointer to its contained element from a const reference to the mstd::optional<> makes it ineligible to be
+			shared among threads. Analogous to mtnii_vector<>, mt_optional<> is a version that is eligible to be shared among
+			threads, at a cost of slightly higher run-time overhead. */
+			auto opt1_access_requester = mse::make_asyncsharedv2readwrite<mse::mt_optional<mse::mtnii_string> >("abc");
+			auto elem_ptr1 = mse::make_optional_element_pointer(opt1_access_requester.writelock_ptr());
+			auto val1 = *elem_ptr1;
+		}
+		{
+			/* mstd::optional<> and mt_optional<> can, like any other type, be declared as a scope type (using
+			mse::make_xscope() / mse::TXScopeObj<>). But they do not support using scope types as their contained element
+			type. It is (intended to be) uncommon to need such capability. But the library does provide a couple of
+			versions that support it. xscope_mt_optional<> is eligible to be shared among (scope) threads, while
+			xscope_st_optional<> is not. */
+
+			/* Here we're creating a (string) object of scope type. */
+			auto xs_str1 = mse::make_xscope(mse::mstd::string("abc"));
+
+			/* Here we're creating an xscope_st_optional<> object that contains a scope pointer to the (scope) string object.
+			mstd::optional<>, for example, would not support this. */
+			auto xsopt1 = mse::make_xscope_st_optional(&xs_str1);
+			// which can also be written as
+			// auto xsopt1 = mse::xscope_st_optional<mse::TXScopeFixedPointer<mse::mstd::string> >(&xs_str1);
+
+			auto val1 = *(xsopt1.value());
+		}
+
+		{
+			/* You might think of optional<> as a dynamic container like a vector<> that supports a maximum of one element.
+			That would make mse::optional<> analogous to mse::nii_vector<>. That is, it is eligible to be shared among
+			threads while having lower overhead than mt_optional<>, but the trade-off being that you cannot, in general,
+			obtain a direct scope pointer to the contained element from a const reference to the mse::optional<> container.
+			But, like nii_vector<>, you can if the mse::optional<> container is declared as an "exclusive writer" object: */
+			auto xs_ac_opt1 = mse::make_xscope(mse::make_exclusive_writer(mse::optional<mse::mtnii_string>("abc")));
+			auto xs_ac_cptr1 = mse::make_xscope_access_controlled_const_pointer(xs_ac_opt1);
+			auto xs_elem_cptr1 = mse::make_xscope_optional_element_const_pointer(xs_ac_cptr1);
+			auto xs_ptr1 = mse::xscope_pointer(xs_elem_cptr1);
+			auto val1 = *xs_ptr1;
+		}
 
 		mse::self_test::COptionalTest1::s_test1();
 	}
 
 	{
+		/*************/
+		/*  tuple<>  */
+		/*************/
+
+		{
+			/* mstd::tuple<> is essentially just an implementation of std::tuple<> that supports the library's scope and
+			data race safety mechanisms. But you may, on occasion, also need a (safe) pointer that directly targets a
+			contained element. You could make the element type a "registered" or "norad" object. Alternatively, you can
+			obtain a safe pointer to a contained element from a pointer to the tuple<> object like so: */
+			auto tup1_refcptr = mse::make_refcounting<mse::mstd::tuple<double, char, mse::mstd::string> >(mse::mstd::make_tuple(3.8, 'A', mse::mstd::string("Lisa Simpson")));
+			auto elem_ptr1 = mse::make_tuple_element_pointer<double>(tup1_refcptr);
+			auto val1 = *elem_ptr1;
+		}
+		{
+			/* More commonly, the tuple<> object might be declared as a scope object. */
+			auto xs_tup1 = mse::make_xscope(mse::mstd::make_tuple(3.8, 'A', mse::mstd::string("Lisa Simpson")));
+			// which can also be written as
+			// auto xs_tup1 = mse::TXScopeObj<mse::mstd::tuple<double, char, mse::mstd::string> >(3.8, 'A', mse::mstd::string("Lisa Simpson"));
+
+			auto xs_elem_ptr1 = mse::make_xscope_tuple_element_pointer<2>(&xs_tup1);
+
+			/* Here we obtain a "regular" scope pointer to the element from the scope "tuple element pointer". */
+			auto xs_ptr1 = mse::xscope_pointer(xs_elem_ptr1);
+			auto val1 = *xs_ptr1;
+		}
+		{
+			/* mstd::tuple<> can, like any other type, be declared as a scope type (using mse::make_xscope()
+			/ mse::TXScopeObj<>). But it does not support using scope types as a contained element type. It
+			is (intended to be) uncommon to need such capability. But the library does provide a version,
+			xscope_tuple<>, that supports it. */
+
+			/* Here we're creating a (string) object of scope type. */
+			auto xs_str1 = mse::make_xscope(mse::mstd::string("abc"));
+
+			/* Here we're creating an xscope_tuple<> object that contains a scope pointer to the (scope) string object.
+			mstd::tuple<>, for example, would not support this. */
+			auto xstup1 = mse::make_xscope_tuple(&xs_str1);
+			// which can also be written as
+			// auto xstup1 = mse::xscope_tuple<mse::TXScopeFixedPointer<mse::mstd::string> >(&xs_str1);
+
+			auto val1 = *(std::get<0>(xstup1));
+		}
+
+		mse::self_test::CTupleTest1::s_test1();
+	}
+
+	{
 		/***********************/
 		/*  return_value()     */
-		/*  && TReturnValue<>  */
 		/***********************/
 
 		/* The return_value() function (generally) just returns its argument and verifies that it is of a type that is safe
 		to return from a function (basically, doesn't contain any scope pointers). If not it will induce a compile error.
-		Functions that do or could return scope types should wrap their return value with this function. 
-
-		TReturnValue<> is a transparent template wrapper that verifies that the type is safe to use as a function return
-		type. If not it will induce a compile error. Functions that do or could return scope types and do not use the 
-		"auto" return type should wrap their return type with this function. Alternatively, you can use
-		TXScopeReturnValue<> which additionally ensures that the return type is a scope type. */
+		Functions that do or could return scope types should wrap their return value with this function. */
 
 		class CB {
 		public:
@@ -531,39 +820,31 @@ void msetl_example2() {
 			}
 
 			/* In the less common case where the scope type doesn't have an underlying non-scope type, it may be safe
-			to return the scope object. But in order to use a scope type as a function return value, it must be
-			wrapped in the transparent mse::TReturnValue<> or mse::TXScopeReturnValue<> wrapper template, which will
-			induce a compile error if it deems the scope type potentially unsafe to use as a return type. */
-			static mse::TXScopeReturnValue<mse::xscope_optional<mse::mstd::string> > foo2() {
+			to return the scope object.  */
+			static mse::xscope_optional<mse::mstd::string> foo2() {
 				mse::xscope_optional<mse::mstd::string> xscp_returnable_obj1(mse::mstd::string("some text"));
 				return mse::return_value(xscp_returnable_obj1);
 			}
 
-			/* "auto" return types don't need to be wrapped, but the return value needs to be wrapped with the
-			return_value() function. */
 			static auto foo3() {
-				mse::xscope_optional<mse::mstd::string> xscp_returnable_obj1(mse::mstd::string("some text"));
-				return mse::return_value(xscp_returnable_obj1);
+				mse::TXScopeObj<mse::mstd::string> xscp_string1("some text");
+				auto xscp_ptr = &xscp_string1;
+
+				/* Returning a scope pointer (to a local variable for example) could be unsafe. So mse::return_value()
+				induces a compile error if the return value contains a scope pointer/reference. */
+				//return mse::return_value(xscp_ptr);
+
+				return mse::return_value(xscp_string1);
 			}
 		};
 
-		mse::TXScopeObj<mse::mstd::string> xscp_res1(CB::foo1());
-		mse::xscope_optional<mse::mstd::string> xscp_res2(CB::foo2());
+		mse::TXScopeObj<mse::mstd::string> xscp_res1 = CB::foo1();
+		mse::xscope_optional<mse::mstd::string> xscp_res2 = CB::foo2();
 
 		typedef mse::TXScopeObj<mse::mstd::string> xscope_string_t;
 		xscope_string_t xscp_str1 = "some text";
-		/* TXScopeReturnValue<> deems xscope_string_t to be an acceptable return type because it doesn't contain
-		any scope pointers. */
-		mse::TXScopeReturnValue<xscope_string_t> xscpr_str1("some text");
-		auto xscp_rstr1 = mse::return_value(xscp_str1);
 
-		typedef decltype(&xscp_str1) xscope_string_ptr_t;
-		/* TXScopeReturnValue<> deems xscope_string_ptr_t to be an unsafe return type because it is (or contains)
-		a scope pointer. So the next line would result in a compile error. */
-		//mse::TXScopeReturnValue<xscope_string_ptr_t> xscpr_sfptr1 = &xscp_str1;
-		//auto xscp_rstr_ptr1 = mse::return_value(&xscp_str1);
-	
-		mse::TRegisteredObj<mse::mstd::string> reg_str1 = "some text";
+		mse::TNDRegisteredObj<mse::mstd::string> reg_str1 = "some text";
 		auto reg_ptr_res1 = J::foo10(reg_str1);
 		//auto xscp_ptr_res1 = J::foo10(xscp_str1); // <-- would induce a compile error inside J::foo10() 
 	}
@@ -574,31 +855,28 @@ void msetl_example2() {
 		/* It is (intended to be) uncommon to need to define your own scope types. In general, if you want to use a
 		type as a scope type, you can just wrap it with the mse::TXScopeObj<> template. */
 
-		/* But in cases where you're going to use a scope type as a member of a class or struct, that class or
-		struct must itself be a scope type. Improperly defining a scope type could result in unsafe code. */
+		/* But in cases where you're going to use a scope type as a member of a class or struct, that class or struct
+		must itself be a scope type. Improperly defining a scope type could result in unsafe code. Use of a safety
+		enforcement helper tool, like scpptool, is required to ensure that your scope type is defined properly. 
+		And note that mse::xscope_tuple<> also supports scope type elements/fields. */
 
-		/* Scope types need to publicly inherit from mse::us::impl::XScopeTagBase. And by convention, be named with a prefix
-		indicating that it's a scope type. */
-		class xscope_my_type1 : public mse::us::impl::XScopeTagBase {
+		/* Scope types need to publicly inherit from mse::rsv::XScopeTagBase. And by convention, be named with a
+		prefix indicating that it's a scope type. */
+		class xscope_my_type1 : public mse::rsv::XScopeTagBase {
 		public:
 			xscope_my_type1(const mse::xscope_optional<mse::mstd::string>& xscp_maybe_string)
 				: m_xscp_maybe_string1(xscp_maybe_string) {}
-
-			/* If your scope type does not contain any non-owning scope pointers, then it should be safe to use
-			as a function return type. You can "mark" it as such by adding the following member function. If the
-			type does contain non-owning scope pointers, then doing so could result in unsafe code. */
-			void xscope_returnable_tag() const {} /* Indication that this type is can be used as a function return value. */
 
 			mse::xscope_optional<mse::mstd::string> m_xscp_maybe_string1;
 		};
 
 		/* If your type contains or owns any non-owning scope pointers, then it must also publicly inherit
-		from mse::us::impl::ContainsNonOwningScopeReferenceTagBase. If your type contains or owns any item that can be
+		from mse::rsv::ContainsNonOwningScopeReferenceTagBase. If your type contains or owns any item that can be
 		independently targeted by scope pointers (i.e. basically has a '&' ("address of" operator) that yeilds
-		a scope pointer), then it must also publicly inherit from mse::us::impl::ReferenceableByScopePointerTagBase.
-		Failure to do so could result in unsafe code. */
-		class xscope_my_type2 : public mse::us::impl::XScopeTagBase, public mse::us::impl::ContainsNonOwningScopeReferenceTagBase
-			, public mse::us::impl::ReferenceableByScopePointerTagBase
+		a scope pointer), then it must also publicly inherit from mse::rsv::ReferenceableByScopePointerTagBase.
+		Failure to do so could result in unsafe code. The scpptool, for example, will check for any such failure. */
+		class xscope_my_type2 : public mse::rsv::XScopeTagBase, public mse::rsv::ContainsNonOwningScopeReferenceTagBase
+			, public mse::rsv::ReferenceableByScopePointerTagBase
 		{
 		public:
 			typedef mse::TXScopeItemFixedConstPointer<mse::mstd::string> xscope_string_ptr_t;
@@ -654,8 +932,8 @@ void msetl_example2() {
 			functions expecting scope random access section arguments. */
 			class CD {
 			public:
-				typedef decltype(mse::make_xscope_random_access_const_section(mse::pointer_to(mse::TXScopeObj<mse::nii_vector<int> >
-					(mse::nii_vector<int>{ 1, 2, 3})))) xscope_ra_csection_t;
+				typedef decltype(mse::make_xscope_random_access_const_section(mse::pointer_to(mse::TXScopeObj<mse::mtnii_vector<int> >
+					(mse::mtnii_vector<int>{ 1, 2, 3})))) xscope_ra_csection_t;
 				static bool second_is_longer(mse::rsv::TXScopeFParam<xscope_ra_csection_t> xscope_ra_csection1
 					, mse::rsv::TXScopeFParam<xscope_ra_csection_t> xscope_ra_csection2) {
 
@@ -668,36 +946,36 @@ void msetl_example2() {
 				}
 			};
 
-			mse::TXScopeObj<mse::nii_vector<int> > vector1(mse::nii_vector<int>{ 1, 2, 3});
+			mse::TXScopeObj<mse::mtnii_vector<int> > vector1(mse::mtnii_vector<int>{ 1, 2, 3});
 			auto xscope_ra_csection1 = mse::make_xscope_random_access_const_section(&vector1);
 			auto res1 = CD::second_is_longer(xscope_ra_csection1, mse::make_xscope_random_access_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_vector<int> >(mse::nii_vector<int>{ 1, 2, 3, 4}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_vector<int> >(mse::mtnii_vector<int>{ 1, 2, 3, 4}))));
 			auto res2 = J::second_is_longer(xscope_ra_csection1, mse::make_xscope_random_access_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_vector<int> >(mse::nii_vector<int>{ 1, 2, 3, 4}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_vector<int> >(mse::mtnii_vector<int>{ 1, 2, 3, 4}))));
 			auto res3 = CD::second_is_longer_any(xscope_ra_csection1, mse::make_xscope_random_access_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_vector<int> >(mse::nii_vector<int>{ 1, 2, 3, 4}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_vector<int> >(mse::mtnii_vector<int>{ 1, 2, 3, 4}))));
 		}
 	}
 
 	{
 		/******************/
 		/*  mstd::string  */
-		/*  & nii_string  */
+		/*  & mtnii_string  */
 		/******************/
 
 		std::string str1 = "some text";
-		mse::nii_string nii_str1 = "some text";
+		mse::mtnii_string mtnii_str1 = "some text";
 		mse::us::msestring msestr1 = "some text";
 		mse::mstd::string mstdstr1 = "some text";
 
 		std::cout << str1;
-		std::cout << nii_str1;
+		std::cout << mtnii_str1;
 		std::cout << msestr1;
 		std::cout << mstdstr1;
 
 		{
 			std::string str2 = "some text";
-			mse::nii_string nii_str2 = "some text";
+			mse::mtnii_string mtnii_str2 = "some text";
 			mse::us::msestring msestr2 = "some text";
 			mse::mstd::string mstdstr2 = "some text";
 
@@ -705,55 +983,55 @@ void msetl_example2() {
 			std::istringstream iss(stringvalues);
 			iss >> mstdstr2;
 			iss >> msestr2;
-			iss >> nii_str2;
+			iss >> mtnii_str2;
 			iss >> str2;
 			std::getline(iss, mstdstr2, ',');
 			std::getline(iss, mstdstr2);
 			std::getline(iss, msestr2, ',');
 			std::getline(iss, msestr2);
-			std::getline(iss, nii_str2, ',');
-			std::getline(iss, nii_str2);
+			std::getline(iss, mtnii_str2, ',');
+			std::getline(iss, mtnii_str2);
 			std::getline(iss, str2);
 		}
 
 		auto str2 = str1 + str1;
 		str2.replace(1, 2, str1);
 		auto comp_res1 = str2.compare(str1);
-		auto nii_str2 = nii_str1 + nii_str1;
-		nii_str2.replace(1, 2, nii_str1);
-		nii_str2.compare(nii_str1);
+		auto mtnii_str2 = mtnii_str1 + mtnii_str1;
+		mtnii_str2.replace(1, 2, mtnii_str1);
+		auto comp_res2 = mtnii_str2.compare(mtnii_str1);
 		auto msestr2 = msestr1 + msestr1;
 		msestr2.replace(1, 2, msestr1);
-		msestr2.compare(msestr1);
+		auto comp_res3 = msestr2.compare(msestr1);
 		auto mstdstr2 = mstdstr1 + mstdstr1;
 		mstdstr2.replace(1, 2, mstdstr1);
-		mstdstr2.compare(mstdstr1);
+		auto comp_res4 = mstdstr2.compare(mstdstr1);
 
 		std::string str3 = "some text";
-		mse::TXScopeObj<mse::nii_string> xscp_nii_str3 = "some text";
-		auto nii_str3_xscpiter1 = mse::make_xscope_begin_iterator(&xscp_nii_str3);
-		nii_str2.copy(nii_str3_xscpiter1, 5);
+		mse::TXScopeObj<mse::mtnii_string> xscp_mtnii_str3 = "some text";
+		auto mtnii_str3_xscpiter1 = mse::make_xscope_begin_iterator(&xscp_mtnii_str3);
+		mtnii_str2.copy(mtnii_str3_xscpiter1, 5);
 
-		mse::TRegisteredObj<mse::nii_string> reg_nii_str3 = "some text";
-		nii_str2.copy(mse::make_begin_iterator(&reg_nii_str3), 5);
+		mse::TRegisteredObj<mse::mtnii_string> reg_mtnii_str3 = "some text";
+		mtnii_str2.copy(mse::make_begin_iterator(&reg_mtnii_str3), 5);
 
 		str2 = str2.substr(1);
-		nii_str2 = nii_str2.substr(1);
+		mtnii_str2 = mtnii_str2.substr(1);
 		msestr2 = msestr2.substr(1);
 		mstdstr2 = mstdstr2.substr(1);
 
-		std::swap(nii_str1, nii_str2);
-		std::swap(str1, nii_str1);
+		std::swap(mtnii_str1, mtnii_str2);
+		std::swap(str1, mtnii_str1);
 
 		std::swap(msestr1, msestr2);
 		std::swap(str1, msestr1);
-		std::swap(msestr1, nii_str1);
-		std::swap(nii_str1, msestr1);
+		std::swap(msestr1, mtnii_str1);
+		std::swap(mtnii_str1, msestr1);
 
 		std::swap(mstdstr1, mstdstr2);
 		std::swap(str1, mstdstr1);
-		std::swap(mstdstr1, nii_str1);
-		std::swap(nii_str1, mstdstr1);
+		std::swap(mstdstr1, mtnii_str1);
+		std::swap(mtnii_str1, mstdstr1);
 
 		{
 			using namespace std::literals;
@@ -766,6 +1044,27 @@ void msetl_example2() {
 		{
 			using namespace mse::literals;
 			auto niistr5 = "some text"_niis;
+		}
+
+		{
+#ifdef MSE_HAS_CXX17
+			/* deduction guide example */
+			auto str1 = std::string("abcd");
+			{
+				auto mtnii_str1 = mse::mtnii_string{ str1.cbegin(), str1.cend() };
+				assert('b' == mtnii_str1[1]);
+			}
+			{
+				auto sv1 = std::string_view(str1);
+				auto mtnii_str2 = mse::mtnii_string{ sv1 };
+				assert('b' == mtnii_str2[1]);
+			}
+			{
+				auto xs_str_csection1 = mse::make_string_const_section(str1);
+				auto mtnii_str3 = mse::mtnii_string{ xs_str_csection1 };
+				assert('b' == mtnii_str3[1]);
+			}
+#endif /* MSE_HAS_CXX17 */
 		}
 	}
 
@@ -791,11 +1090,11 @@ void msetl_example2() {
 		std::cout << string_section2;
 
 		/* The (run-time overhead free) scope (and const) versions. */
-		typedef mse::TXScopeObj< mse::nii_string > xscope_nii_string_t;
-		xscope_nii_string_t xscp_nstring1("some text");
+		typedef mse::TXScopeObj< mse::mtnii_string > xscope_mtnii_string_t;
+		xscope_mtnii_string_t xscp_nstring1("some text");
 		auto xscp_citer1 = mse::make_xscope_begin_const_iterator(&xscp_nstring1);
 		auto xscp_string_section1 = mse::make_xscope_string_const_section(xscp_citer1 + 1, 7);
-		auto xscp_string_section2 = xscp_string_section1.xscope_substr(4, 3);
+		auto xscp_string_section2 = mse::make_xscope_substr(xscp_string_section1, 4, 3);
 		assert(xscp_string_section2.front() == 't');
 		assert(xscp_string_section2.back() == 'x');
 
@@ -814,13 +1113,13 @@ void msetl_example2() {
 			class CD {
 			public:
 				/* For this example function, the parameter type we'll be using is a "const scope string section that references a
-				scope nii_string". It's a rather verbose type to express, and here we use decltype() to express it. But this example
+				scope mtnii_string". It's a rather verbose type to express, and here we use decltype() to express it. But this example
 				function is mostly for demonstration purposes. Generally, as demonstrated in the other example functions, when
 				taking string sections as function parameters, rather than specifying a particular string section type, you would
 				instead either make the function a function template or use a polymorphic string section type which are more concise
 				and give the caller flexibility in terms of the type of string section they can pass. */
 
-				typedef decltype(mse::make_xscope_string_const_section(std::declval<mse::TXScopeItemFixedConstPointer<mse::nii_string> >())) xscope_string_csection_t;
+				typedef decltype(mse::make_xscope_string_const_section(std::declval<mse::TXScopeItemFixedConstPointer<mse::mtnii_string> >())) xscope_string_csection_t;
 				static bool second_is_longer(mse::rsv::TXScopeFParam<xscope_string_csection_t> xscope_string_csection1
 					, mse::rsv::TXScopeFParam<xscope_string_csection_t> xscope_string_csection2) {
 
@@ -835,16 +1134,16 @@ void msetl_example2() {
 				}
 			};
 
-			mse::TXScopeObj<mse::nii_string > string1(mse::nii_string{"abc"});
+			mse::TXScopeObj<mse::mtnii_string > string1(mse::mtnii_string{"abc"});
 			auto xscope_string_csection1 = mse::make_xscope_string_const_section(&string1);
 
 			/* In these function calls, the second parameter is a string section that refers to a temporary string. */
 			auto res1 = CD::second_is_longer(xscope_string_csection1, mse::make_xscope_string_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_string >(mse::nii_string{"abcd"}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_string >(mse::mtnii_string{"abcd"}))));
 			auto res2 = J::second_is_longer(xscope_string_csection1, mse::make_xscope_string_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_string >(mse::nii_string{"abcd"}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_string >(mse::mtnii_string{"abcd"}))));
 			auto res3 = CD::second_is_longer_any(xscope_string_csection1, mse::make_xscope_string_const_section(
-				mse::pointer_to(mse::TXScopeObj<mse::nii_string >(mse::nii_string{"abcd"}))));
+				mse::pointer_to(mse::TXScopeObj<mse::mtnii_string >(mse::mtnii_string{"abcd"}))));
 		}
 	}
 
@@ -860,13 +1159,13 @@ void msetl_example2() {
 		mse::mstd::string mstring1("some text");
 		mse::TAnyStringSection<char> any_string_section1(mstring1.begin()+5, 3);
 
-		auto string_literal = "some text";
+		const auto string_literal = "some text";
 		mse::TAnyStringConstSection<char> any_string_const_section2(string_literal+5, 3);
 
-		typedef mse::TRegisteredObj<mse::nii_string> reg_nii_string_t;
-		reg_nii_string_t reg_nii_string3("some other text");
+		typedef mse::TRegisteredObj<mse::mtnii_string> reg_mtnii_string_t;
+		reg_mtnii_string_t reg_mtnii_string3("some other text");
 		/* This is a different type of (safe) iterator to a different type of string. */
-		auto iter = reg_nii_string_t::ss_begin(&reg_nii_string3);
+		auto iter = reg_mtnii_string_t::ss_begin(&reg_mtnii_string3);
 
 		/* Resulting in a different type of string section. */
 		auto string_section3 = mse::make_string_section(iter+11, 3);
@@ -877,6 +1176,40 @@ void msetl_example2() {
 		assert(any_string_section1.back() == 'x');
 		any_string_section1 = string_section3;
 		any_string_section1[1] = 'E';
+	}
+
+	{
+		/************************************/
+		/*  TXScopeCSSSXSTEStringSection<>  */
+		/************************************/
+
+		/* TXScopeCSSSXSTEStringSection<> is the string specialized version of TXScopeCSSSXSTERandomAccessSection<>. Like
+		TXScopeAnyStringSection<>, it can, with lower overhead but more restrictions, be used to enable functions to take
+		as arguments sections of strings. While mstd::string_view (/TAnyStringConstSection<char>) closely matches the
+		interface and flexibilty of std::string_view, TXScopeCSSSXSTEStringConstSection<char> would more closely match
+		its (low) overhead. */
+
+		auto xs_mstring1 = mse::make_xscope(mse::mstd::string("some text"));
+		auto xs_mstring1_iter1 = mse::make_xscope_begin_iterator(&xs_mstring1) + 5;
+		mse::TXScopeCSSSXSTEStringSection<char> xs_csssxste_string_section1(xs_mstring1_iter1, 3);
+		/* Note when passing a (scope) string iterator to TXScopeCSSSXSTEStringSection<>'s constructor, as with
+		TXScopeCSSSXSTERandomAccessSection<>, that iterator must be an lvalue, not a temporary (rvalue), otherwise
+		you'll get a compile error.*/
+
+		mse::TXScopeCSSSXSTEStringConstSection<char> xs_csssxste_string_const_section2("some text");
+
+		auto xs_mtnii_string3 = mse::make_xscope(mse::mtnii_string("some other text"));
+		auto xs_string_section3 = mse::make_xscope_string_section(mse::make_xscope_begin_iterator(&xs_mtnii_string3) + 11, 3);
+		/* Note that xs_string_section3 is just a regular string section, not a TXScopeCSSSXSTEStringSection<>, so we
+		can construct it from an rvalue iterator. */
+
+		mse::TXScopeCSSSXSTEStringSection<char> xs_csssxste_string_section3 = xs_string_section3;
+		/* As with iterators, only construction from lvalue string sections is supported, not temporary (rvalue) string sections. */
+
+		assert(xs_csssxste_string_section1 == xs_csssxste_string_section3);
+		assert(xs_csssxste_string_section1.front() == 't');
+		assert(xs_csssxste_string_section1.back() == 'x');
+		xs_csssxste_string_section1[1] = 'E';
 	}
 
 	{
@@ -895,12 +1228,12 @@ void msetl_example2() {
 			msv1 = mse::mstd::string_view(mstring1);
 		}
 #if !defined(MSE_MSTDSTRING_DISABLED) && !defined(MSE_MSTD_STRING_CHECK_USE_AFTER_FREE)
-		try {
+		MSE_TRY {
 			/* This is not undefined (or unsafe) behavior. */
 			auto ch1 = msv1[3]; /* In debug mode this will fail an assert. In non-debug mode it'll just work (safely). */
 			assert('e' == ch1);
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			/* At present, no exception will be thrown. Instead, the lifespan of the string data is extended to match
 			that of the mstd::string_view. It's possible that in future library implementations, an exception may be thrown. */
 		}
@@ -930,11 +1263,11 @@ void msetl_example2() {
 
 			mse::mstd::string s = "Hellooooooooooooooo ";
 			mse::nrp_string_view sv = s + "World\n";
-			try {
+			MSE_TRY {
 				/* This is not undefined (or unsafe) behavior. */
 				std::cout << sv; /* In debug mode this will fail an assert. In non-debug mode it'll just work (safely). */
 			}
-			catch(...) {
+			MSE_CATCH_ANY {
 				/* At present, no exception will be thrown. Instead, the lifespan of the string data is extended to match
 				that of the mse::nrp_string_view. It's possible that in future library implementations, an exception may be thrown. */
 			}
@@ -943,12 +1276,12 @@ void msetl_example2() {
 		{
 			/* Memory safety can also be achieved without extra run-time overhead. */
 
-			/* nii_string is a safe string type (with no extra run-time overhead). */
-			mse::nii_string s = "Hellooooooooooooooo ";
+			/* mtnii_string is a safe string type (with no extra run-time overhead). */
+			mse::mtnii_string s = "Hellooooooooooooooo ";
 
 			/* TXScopeObj<> is a transparent "annotation" template wrapper indicating that the object has "scope lifetime"
 			(i.e. is declared on the stack). The wrapper, to the extent possible, enforces the claim. */
-			mse::TXScopeObj< mse::nii_string > xscope_s2 = s + "World\n";
+			mse::TXScopeObj< mse::mtnii_string > xscope_s2 = s + "World\n";
 
 			/* xscope_pointer is not a raw pointer. It is an "annotated" pointer indicating its target has scope lifetime.
 			The '&' operator is overloaded. */
@@ -965,11 +1298,11 @@ void msetl_example2() {
 
 			/* And just to be clear: */
 
-			/* You can't construct a string section directly from a naked nii_string (temporary or otherwise). */
+			/* You can't construct a string section directly from a naked mtnii_string (temporary or otherwise). */
 			//auto xscope_sv2 = mse::make_xscope_nrp_string_const_section(s + "World\n");	 // <-- compile error
 
 			/* And you won't be able to store a "scope" pointer to a temporary. */
-			//auto xscope_pointer2 = &(mse::TXScopeObj< mse::nii_string >(s + "World\n"));	 // <-- compile error
+			//auto xscope_pointer2 = &(mse::TXScopeObj< mse::mtnii_string >(s + "World\n"));	 // <-- compile error
 
 			/* Passing a temporary scope string section that references a temporary string as a function argument is
 			supported. But only if the function parameter is declared to support it. */
@@ -988,10 +1321,10 @@ void msetl_example2() {
 #ifndef MSE_REGISTEREDPOINTER_DISABLED
 			std::string s = "Hellooooooooooooooo ";
 			auto sv = mse::make_nrp_string_const_section(&mse::TRegisteredObj<std::string>(s + "World\n"));
-			try {
+			MSE_TRY {
 				std::cout << sv;
 			}
-			catch (...) {
+			MSE_CATCH_ANY {
 				std::cout << "expected exception\n";
 			}
 #endif //!MSE_REGISTEREDPOINTER_DISABLED
@@ -999,11 +1332,11 @@ void msetl_example2() {
 		{
 #ifndef MSE_REGISTEREDPOINTER_DISABLED
 			std::string s = "Hellooooooooooooooo ";
-			auto sv = mse::mknscs(&mse::mkrolp(s + "World\n"));
-			try {
+			auto sv = mse::mknscs(&mse::make_registered(s + "World\n"));
+			MSE_TRY {
 				std::cout << sv;
 			}
-			catch (...) {
+			MSE_CATCH_ANY {
 				std::cout << "expected exception\n";
 			}
 #endif //!MSE_REGISTEREDPOINTER_DISABLED
@@ -1022,20 +1355,20 @@ void msetl_example2() {
 
 		mse::mstd::array<int, 3> ma1{ 1, 2, 3 };
 
-		mse::TXScopeObj<mse::nii_vector<int> > xscope_nv1 = mse::nii_vector<int>{ 1, 2, 3 };
+		mse::TXScopeObj<mse::mtnii_vector<int> > xscope_nv1 = mse::mtnii_vector<int>{ 1, 2, 3 };
 		auto xscope_nv1_begin_iter = mse::make_xscope_begin_iterator(&xscope_nv1);
 		auto xscope_nv1_end_iter = mse::make_xscope_end_iterator(&xscope_nv1);
 
 		{
 			/* for_each_ptr() */
 
-			/*  mse::for_each_ptr() is like std:::for_each() but instead of passing, to the given function, a reference
+			/*  mse::for_each_ptr() is like std::for_each() but instead of passing, to the given function, a reference
 			to each item it passes a (safe) pointer to each item. The actual type of the pointer varies depending on the
 			type of the given iterators. */
 			typedef mse::for_each_ptr_type<decltype(ma1.begin())> item_ptr_t;
 			mse::for_each_ptr(ma1.begin(), ma1.end(), [](item_ptr_t x_ptr) { std::cout << *x_ptr << std::endl; });
 
-			mse::for_each_ptr(xscope_na1_begin_citer, xscope_na1_end_citer, [](auto x_ptr) { std::cout << *x_ptr << std::endl; });
+			mse::for_each_ptr(xscope_na1_begin_citer, xscope_na1_end_citer, [](const auto x_ptr) { std::cout << *x_ptr << std::endl; });
 
 			/* A "scope range" version is also available that bypasses the use of iterators. As well as often being more
 			convenient, it can theoretically be little more performance optimal. */
@@ -1044,8 +1377,8 @@ void msetl_example2() {
 
 			/* Note that for performance (and safety) reasons, vectors may be "structure locked" for the duration of the loop.
 			That is, any attempt to modify the size of the vector during the loop may result in an exception. */
-			mse::for_each_ptr(xscope_nv1_begin_iter, xscope_nv1_end_iter, [](auto x_ptr) { std::cout << *x_ptr << std::endl; });
-			mse::xscope_range_for_each_ptr(&xscope_nv1, [](auto x_ptr) { std::cout << *x_ptr << std::endl; });
+			mse::for_each_ptr(xscope_nv1_begin_iter, xscope_nv1_end_iter, [](const auto x_ptr) { std::cout << *x_ptr << std::endl; });
+			mse::xscope_range_for_each_ptr(&xscope_nv1, [](const auto x_ptr) { std::cout << *x_ptr << std::endl; });
 		}
 		{
 			/* find_if_ptr() */
@@ -1054,7 +1387,7 @@ void msetl_example2() {
 			auto found_citer1 = mse::find_if_ptr(xscope_na1_begin_citer, xscope_na1_end_citer, [](item_ptr_t x_ptr) { return 2 == *x_ptr; });
 			auto res1 = *found_citer1;
 
-			auto found_citer3 = mse::find_if_ptr(ma1.cbegin(), ma1.cend(), [](auto x_ptr) { return 2 == *x_ptr; });
+			auto found_citer3 = mse::find_if_ptr(ma1.cbegin(), ma1.cend(), [](const auto x_ptr) { return 2 == *x_ptr; });
 
 			/* This version returns an optional scope pointer to the found item rather than an iterator. */
 			typedef mse::xscope_range_get_ref_if_ptr_type<decltype(&xscope_na1)> range_item_ptr_t;
@@ -1063,7 +1396,7 @@ void msetl_example2() {
 
 			/* This version returns a scope pointer to the found item or throws an exception if an appropriate item isn't
 			found. */
-			auto xscope_pointer5 = mse::xscope_range_get_ref_to_element_known_to_be_present_ptr(&xscope_na1, [](auto x_ptr) { return 2 == *x_ptr; });
+			auto xscope_pointer5 = mse::xscope_range_get_ref_to_element_known_to_be_present_ptr(&xscope_na1, [](const auto x_ptr) { return 2 == *x_ptr; });
 			auto res5 = *xscope_pointer5;
 		}
 	}
@@ -1112,7 +1445,7 @@ void msetl_example2() {
 		auto xs_ptr1 = xs_gimm_store1.xscope_ptr();
 		std::cout << *xs_ptr1 << std::endl;
 
-		MSE_DECLARE_STATIC_IMMUTABLE(mse::nii_string) simm_string2 = "abc";
+		MSE_DECLARE_STATIC_IMMUTABLE(mse::mtnii_string) simm_string2 = "abc";
 		auto simm_ptr2 = &simm_string2;
 		auto xs_simm_store2 = mse::make_xscope_strong_pointer_store(simm_ptr2);
 		auto xs_ptr2 = xs_simm_store2.xscope_ptr();
@@ -1121,7 +1454,7 @@ void msetl_example2() {
 		class CA {
 		public:
 			auto foo1() const {
-				MSE_DECLARE_STATIC_IMMUTABLE(mse::nii_string) simm_string = "abc";
+				MSE_DECLARE_STATIC_IMMUTABLE(mse::mtnii_string) simm_string = "abc";
 				/* mse::return_value() just returns its argument and ensures that it's of a (pointer) type that's safe to return. */
 				return mse::return_value(&simm_string);
 			}
@@ -1130,6 +1463,78 @@ void msetl_example2() {
 		auto xs_simm_store3 = mse::make_xscope_strong_pointer_store(simm_ptr3);
 		auto xs_cptr3 = xs_simm_store3.xscope_ptr();
 		std::cout << *xs_cptr3 << std::endl;
+	}
+
+	{
+		/****************************/
+		/*   mtnii_basic_string<>   */
+		/****************************/
+
+		/* mtnii_basic_string<> is the string counterpart to mtmtnii_vector<>. It is eligible to be (safely) shared
+		between asynchronous threads. */
+
+		typedef mse::mtnii_basic_string<char> mtnii_basic_string1_t;
+		auto access_requester1 = mse::make_asyncsharedv2readwrite<mtnii_basic_string1_t>(mtnii_basic_string1_t{ "abc" });
+
+		{
+			/* Here we're obtaining a scope pointer to the basic_string from a writelock pointer to the basic_string. */
+			auto xs_strong_pointer_store = mse::make_xscope_strong_pointer_store(access_requester1.writelock_ptr());
+			auto basic_string_xscope_ptr = xs_strong_pointer_store.xscope_ptr();
+
+			/* Here we're obtaining scope iterators to the string. */
+			auto xscp_iter1 = mse::make_xscope_begin_iterator(basic_string_xscope_ptr);
+			auto xscp_iter2 = mse::make_xscope_end_iterator(basic_string_xscope_ptr);
+
+			std::sort(xscp_iter1, xscp_iter2);
+
+			auto xscp_citer3 = mse::make_xscope_begin_const_iterator(basic_string_xscope_ptr);
+			xscp_citer3 = xscp_iter1;
+			xscp_citer3 = mse::make_xscope_begin_const_iterator(basic_string_xscope_ptr);
+			xscp_citer3 += 1;
+			auto res1 = *xscp_citer3;
+			auto res2 = xscp_citer3[0];
+
+			/* Note that scope iterators to strings (and other dynamic containers), "lock the structure" of the container
+			so that, for example, it cannot be resized. This allows us to obtain a scope pointer to the (lvalue) iterator's
+			target element. */
+			auto xscp_ptr1 = mse::xscope_pointer(xscp_citer3);
+			auto res3 = *xscp_ptr1;
+
+			assert(res3 == 'b');
+		}
+
+		/* stnii_basic_string<>s can be (efficiently) swapped with stnii_basic_string<>s. */
+		auto stniibs1 = mse::stnii_basic_string<char>();
+		std::swap(*(access_requester1.writelock_ptr()), stniibs1);
+		/* Or mstd::basic_string<>s. */
+		auto mstdbs1 = mse::mstd::basic_string<char>();
+		std::swap(*(access_requester1.writelock_ptr()), mstdbs1);
+	}
+
+	{
+		/****************************/
+		/*   stnii_basic_string<>   */
+		/****************************/
+
+		/* stnii_basic_string<> is the string counterpart to stmtnii_vector<>. It is not eligible to be shared between threads. */
+
+		mse::TXScopeObj<mse::stnii_basic_string<char> > basic_string1_xscpobj = mse::stnii_basic_string<char>{ "abc" };
+
+		{
+			mse::TXScopeItemFixedConstPointer<mse::stnii_basic_string<char> > xscptr = &basic_string1_xscpobj;
+			auto xscp_citer1 = mse::make_xscope_begin_const_iterator(xscptr);
+			xscp_citer1 += 2;
+			auto xscp_cptr1 = mse::xscope_const_pointer(xscp_citer1);
+			auto res1 = *xscp_cptr1;
+		}
+		basic_string1_xscpobj.push_back(4);
+
+		/* And of course stnii_basic_string<>s can be (efficiently) swapped with mtnii_basic_string<>s. */
+		auto mtniibs1 = mse::mtnii_basic_string<char>();
+		std::swap(basic_string1_xscpobj, mtniibs1);
+		/* Or mstd::basic_string<>s. */
+		auto mstdbs1 = mse::mstd::string();
+		std::swap(basic_string1_xscpobj, mstdbs1);
 	}
 
 	{
@@ -1206,552 +1611,6 @@ void msetl_example2() {
 		}
 	}
 
-	{
-		/******************/
-		/*  TAsyncShared  */
-		/******************/
-
-		/* The TAsyncShared data types are used to safely share objects between asynchronous threads. */
-
-		class A {
-		public:
-			A(int x) : b(x) {}
-			virtual ~A() {}
-
-			int b = 3;
-			mse::nii_string s = "some text ";
-		};
-		/* User-defined classes need to be declared as (safely) shareable in order to be accepted by the access requesters. */
-		typedef mse::us::TUserDeclaredAsyncShareableObj<A> ShareableA;
-
-		class B {
-		public:
-			static double foo1(mse::TAsyncSharedV2ReadWriteAccessRequester<ShareableA> A_ashar) {
-				auto t1 = std::chrono::high_resolution_clock::now();
-				/* mse::TAsyncSharedV2ReadWriteAccessRequester<ShareableA>::writelock_ptr() will block until it can obtain a write lock. */
-				auto ptr1 = A_ashar.writelock_ptr(); // while ptr1 exists it holds a (write) lock on the shared object
-				auto t2 = std::chrono::high_resolution_clock::now();
-				std::this_thread::sleep_for(std::chrono::seconds(1));
-				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-				auto timespan_in_seconds = time_span.count();
-				auto thread_id = std::this_thread::get_id();
-				//std::cout << "thread_id: " << thread_id << ", time to acquire write pointer: " << timespan_in_seconds << " seconds.";
-				//std::cout << std::endl;
-
-				ptr1->s = std::to_string(timespan_in_seconds);
-				return timespan_in_seconds;
-			}
-			static int foo2(mse::TAsyncSharedV2ImmutableFixedPointer<ShareableA> A_immptr) {
-				return A_immptr->b;
-			}
-		protected:
-			~B() {}
-		};
-
-		std::cout << std::endl;
-		std::cout << "AsyncShared test output:";
-		std::cout << std::endl;
-
-		{
-			/* This block contains a simple example demonstrating the use of mse::TAsyncSharedReadWriteAccessRequester
-			to safely share an object between threads. */
-
-			std::cout << "TAsyncSharedReadWrite:";
-			std::cout << std::endl;
-			auto ash_access_requester = mse::make_asyncsharedv2readwrite<ShareableA>(7);
-			ash_access_requester.writelock_ptr()->b = 11;
-			int res1 = ash_access_requester.readlock_ptr()->b;
-
-			{
-				auto ptr1 = ash_access_requester.writelock_ptr();
-				auto ptr2 = ash_access_requester.writelock_ptr();
-			}
-
-			std::list<std::future<double>> futures;
-			for (size_t i = 0; i < 3; i += 1) {
-				futures.emplace_back(mse::mstd::async(B::foo1, ash_access_requester));
-			}
-			int count = 1;
-			for (auto it = futures.begin(); futures.end() != it; it++, count++) {
-				std::cout << "thread: " << count << ", time to acquire write pointer: " << (*it).get() << " seconds.";
-				std::cout << std::endl;
-			}
-			std::cout << std::endl;
-
-			/* Btw, mse::TAsyncSharedV2ReadOnlyAccessRequester<>s can be copy constructed from
-			mse::TAsyncSharedV2ReadWriteAccessRequester<>s */
-			mse::TAsyncSharedV2ReadOnlyAccessRequester<ShareableA> ash_read_only_access_requester(ash_access_requester);
-		}
-		{
-			std::cout << "TAsyncSharedReadOnly:";
-			std::cout << std::endl;
-			auto ash_access_requester = mse::make_asyncsharedv2readonly<ShareableA>(7);
-			int res1 = ash_access_requester.readlock_ptr()->b;
-
-			std::list<std::future<double>> futures;
-			for (size_t i = 0; i < 3; i += 1) {
-				futures.emplace_back(mse::mstd::async(J::foo7<mse::TAsyncSharedV2ReadOnlyAccessRequester<ShareableA>>, ash_access_requester));
-			}
-			int count = 1;
-			for (auto it = futures.begin(); futures.end() != it; it++, count++) {
-				std::cout << "thread: " << count << ", time to acquire read pointer: " << (*it).get() << " seconds.";
-				std::cout << std::endl;
-			}
-			std::cout << std::endl;
-		}
-		{
-			std::cout << "TAsyncSharedV2ReadWriteAccessRequester:";
-			std::cout << std::endl;
-			auto ash_access_requester = mse::make_asyncsharedv2readwrite<ShareableA>(7);
-			ash_access_requester.writelock_ptr()->b = 11;
-			int res1 = ash_access_requester.readlock_ptr()->b;
-
-			{
-				auto ptr3 = ash_access_requester.readlock_ptr();
-				auto ptr1 = ash_access_requester.writelock_ptr();
-				auto ptr2 = ash_access_requester.writelock_ptr();
-			}
-
-			std::list<std::future<double>> futures;
-			for (size_t i = 0; i < 3; i += 1) {
-				futures.emplace_back(mse::mstd::async(J::foo7<mse::TAsyncSharedV2ReadWriteAccessRequester<ShareableA>>, ash_access_requester));
-			}
-			int count = 1;
-			for (auto it = futures.begin(); futures.end() != it; it++, count++) {
-				std::cout << "thread: " << count << ", time to acquire read pointer: " << (*it).get() << " seconds.";
-				std::cout << std::endl;
-			}
-			std::cout << std::endl;
-		}
-		{
-			std::cout << "TAsyncSharedV2ReadOnlyAccessRequester:";
-			std::cout << std::endl;
-			auto ash_access_requester = mse::make_asyncsharedv2readonly<ShareableA>(7);
-			int res1 = ash_access_requester.readlock_ptr()->b;
-
-			std::list<std::future<double>> futures;
-			for (size_t i = 0; i < 3; i += 1) {
-				futures.emplace_back(mse::mstd::async(J::foo7<mse::TAsyncSharedV2ReadOnlyAccessRequester<ShareableA>>, ash_access_requester));
-			}
-			int count = 1;
-			for (auto it = futures.begin(); futures.end() != it; it++, count++) {
-				std::cout << "thread: " << count << ", time to acquire read pointer: " << (*it).get() << " seconds.";
-				std::cout << std::endl;
-			}
-			std::cout << std::endl;
-		}
-		{
-			/* Just demonstrating the existence of the "try" versions. */
-			auto access_requester = mse::make_asyncsharedv2readwrite<mse::nii_string>("some text");
-			auto writelock_ptr1 = access_requester.try_writelock_ptr();
-			if (writelock_ptr1) {
-				// lock request succeeded
-				int q = 5;
-			}
-			auto readlock_ptr2 = access_requester.try_readlock_ptr_for(std::chrono::seconds(1));
-			auto writelock_ptr3 = access_requester.try_writelock_ptr_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
-		}
-		{
-			/* For scenarios where the shared object is immutable (i.e. is never modified), you can get away without using locks
-			or access requesters. */
-			auto A_immptr = mse::make_asyncsharedv2immutable<ShareableA>(5);
-			int res1 = A_immptr->b;
-			std::shared_ptr<const ShareableA> A_shptr(A_immptr);
-
-			std::list<std::future<int>> futures;
-			for (size_t i = 0; i < 3; i += 1) {
-				futures.emplace_back(mse::mstd::async(B::foo2, A_immptr));
-			}
-			int count = 1;
-			for (auto it = futures.begin(); futures.end() != it; it++, count++) {
-				int res2 = (*it).get();
-			}
-
-			auto A_b_safe_cptr = mse::make_const_pointer_to_member_v2(A_immptr, &A::b);
-		}
-		{
-			/* This block demonstrates safely allowing different threads to (simultaneously) modify different
-			sections of a vector. (We use vectors in this example, but it works just as well with arrays.) */
-
-			static const size_t num_sections = 10;
-			static const size_t section_size = 5;
-			const size_t num_elements = num_sections * section_size;
-
-			typedef mse::nii_vector<mse::nii_string> async_shareable_vector1_t;
-			typedef mse::mstd::vector<mse::nii_string> nonshareable_vector1_t;
-			/* Let's say we have a vector. */
-			nonshareable_vector1_t vector1;
-			vector1.resize(num_elements);
-			{
-				size_t count = 0;
-				for (auto& item_ref : vector1) {
-					count += 1;
-					item_ref = "text" + std::to_string(count);
-				}
-			}
-
-			/* Only access controlled objects can be shared with other threads, so we'll make an access controlled vector and
-			(temporarily) swap it with our original one. */
-			auto ash_access_requester = mse::make_asyncsharedv2readwrite<async_shareable_vector1_t>();
-			std::swap(vector1, (*(ash_access_requester.writelock_ptr())));
-
-			std::cout << "mse::TAsyncRASectionSplitter<>, part 1: " << std::endl;
-
-			{
-				/* Now, we're going to use the access requester to obtain two new access requesters that provide access to
-				(newly created) "random access section" objects which are used to access (disjoint) sections of the vector.
-				We need to specify the position where we want to split the vector. Here we specify that it be split at index
-				"num_elements / 2", right down the middle. */
-				mse::TAsyncRASectionSplitter<decltype(ash_access_requester)> ra_section_split1(ash_access_requester, num_elements / 2);
-				auto ar1 = ra_section_split1.first_ra_section_access_requester();
-				auto ar2 = ra_section_split1.second_ra_section_access_requester();
-
-				/* The J::foo8 template function is just an example function that operates on containers of strings. In our case the
-				containers will be the random access sections we just created. We'll create an instance of the function here. */
-				auto& my_foo8_function_ref = J::foo8<decltype(ar1.writelock_ra_section())>;
-				typedef std::remove_reference<decltype(my_foo8_function_ref)>::type my_foo8_function_type;
-
-				/* We want to execute the my_foo8 function in a separate thread. The function takes a "random access section"
-				as an argument. But as we're not allowed to pass random access sections between threads, we must pass an
-				access requester instead. The "J::invoke_with_writelock_ra_section1" template function is just a helper
-				function that will obtain a (writelock) random access section from the access requester, then call the given
-				function, in this case my_foo8, with that random access section. So here we'll use it to create a proxy
-				function that we can execute directly in a separate thread and will accept an access requester as a
-				parameter. */
-				auto& my_foo8_proxy_function_ref = J::invoke_with_writelock_ra_section1<decltype(ar1), my_foo8_function_type>;
-
-				std::list<mse::mstd::thread> threads;
-				/* So this thread will modify the first section of the vector. */
-				threads.emplace_back(mse::mstd::thread(my_foo8_proxy_function_ref, ar1, my_foo8_function_ref));
-				/* While this thread modifies the other section. */
-				threads.emplace_back(mse::mstd::thread(my_foo8_proxy_function_ref, ar2, my_foo8_function_ref));
-
-				{
-					int count = 1;
-					for (auto it = threads.begin(); threads.end() != it; it++, count++) {
-						(*it).join();
-					}
-				}
-				int q = 5;
-			}
-			std::cout << "mse::TAsyncRASectionSplitter<>, part 2: " << std::endl;
-			{
-				/* Ok, now let's do it again, but instead of splitting the vector into two sections, let's split it into more sections: */
-				/* First we create a list of a the sizes of each section. We'll use a vector here, but any iteratable container will work. */
-				mse::mstd::vector<size_t> section_sizes;
-				for (size_t i = 0; i < num_sections; i += 1) {
-					section_sizes.push_back(section_size);
-				}
-
-				/* Just as before, TAsyncRASectionSplitter<> will generate a new access requester for each section. */
-				mse::TAsyncRASectionSplitter<decltype(ash_access_requester)> ra_section_split1(ash_access_requester, section_sizes);
-				auto ar0 = ra_section_split1.ra_section_access_requester(0);
-
-				auto& my_foo8_function_ref = J::foo8<decltype(ar0.writelock_ra_section())>;
-				typedef std::remove_reference<decltype(my_foo8_function_ref)>::type my_foo8_function_type;
-				auto& my_foo8_proxy_function_ref = J::invoke_with_writelock_ra_section1<decltype(ar0), my_foo8_function_type>;
-
-				{
-					/* Here we demonstrate scope threads. Scope threads don't support being copied or moved. Unlike mstd::thread,
-					scope threads can share objects declared on the stack (which is not utilized here), and in their destructor,
-					scope thread objects will wait until their thread finishes its execution (i.e "join" the thread), blocking if
-					necessary. Often rather than declaring scope thread objects directly, you'll create and manage multiple scope
-					threads with an "xscope_thread_carrier". An xscope_thread_carrier is just a container that holds scope
-					threads. */
-					mse::xscope_thread_carrier xscope_threads;
-					for (size_t i = 0; i < num_sections; i += 1) {
-						auto ar = ra_section_split1.ra_section_access_requester(i);
-						xscope_threads.new_thread(my_foo8_proxy_function_ref, ar, my_foo8_function_ref);
-					}
-					/* The scope will not end until all the scope threads have finished executing. */
-				}
-			}
-
-			/* Now that we're done sharing the (controlled access) vector, we can swap it back to our original vector. */
-			std::swap(vector1, (*(ash_access_requester.writelock_ptr())));
-			auto first_element_value = vector1[0];
-			auto last_element_value = vector1.back();
-
-			int q = 5;
-		}
-		{
-			/* Here we demonstrate safely sharing an existing stack allocated object among threads. */
-
-			std::cout << "xscope_future_carrier<>: " << std::endl;
-
-			/* (Mutable) objects can be shared between threads only if they are "access controlled". You can make an
-			object "access controlled" by wrapping its type with the mse::TXScopeAccessControlledObj<> template wrapper. */
-			mse::TXScopeObj<mse::TXScopeAccessControlledObj<ShareableA> > a_xscpacobj(7);
-
-			/* Here we obtain a scope access requester for the access controlled object. */
-			auto xscope_access_requester = mse::make_xscope_asyncsharedv2acoreadwrite(&a_xscpacobj);
-
-			/* xscope_future_carrier<> is just a container that holds and manages scope futures. */
-			mse::xscope_future_carrier<double> xscope_futures;
-
-			std::list<mse::xscope_future_carrier<double>::handle_t> future_handles;
-			for (size_t i = 0; i < 3; i += 1) {
-				/* You add a future by specifying the async() function and parameters that will return the future value. */
-				auto handle = xscope_futures.new_future(J::foo7<decltype(xscope_access_requester)>, xscope_access_requester);
-
-				/* You need to store the handle of the added future in order to later retrieve its value. */
-				future_handles.emplace_back(handle);
-			}
-			int count = 1;
-			for (auto it = future_handles.begin(); future_handles.end() != it; it++, count++) {
-				std::cout << "thread: " << count << ", time to acquire read pointer: " << xscope_futures.xscope_ptr_at(*it)->get() << " seconds.";
-				std::cout << std::endl;
-			}
-			std::cout << std::endl;
-		}
-
-		{
-			mse::TXScopeObj<mse::TXScopeAccessControlledObj<ShareableA> > a_xscpacobj1(3);
-			mse::TXScopeObj<mse::TXScopeAccessControlledObj<ShareableA> > a_xscpacobj2(5);
-			mse::TXScopeObj<mse::TXScopeAccessControlledObj<ShareableA> > a_xscpacobj3(7);
-
-			{
-				std::cout << "mse::make_xscope_aco_locker_for_sharing(): " << std::endl;
-
-				/* The mse::make_xscope_aco_locker_for_sharing() function takes a scope pointer to an "access controlled object"
-				and returns a "locker" object which then holds an exclusive reference to the given access controlled
-				object. From this locker object, you can obtain either one "scope passable" (non-const) pointer, or
-				any number of "scope passable" const pointers. These scope passable pointers can then be safely
-				passed directly as arguments to scope threads. This is a (little) more cumbersome, more restrictive
-				way of sharing an object than, say, using the library's "access requesters". So generally using
-				access requesters would be preferred. But you might choose to do it this way in certain cases where
-				performance is critical. When using access requesters, each thread obtains the desired lock on a
-				thread-safe mutex. Here we're obtaining the lock before launching the thread(s), so the mutex does
-				not need to be thread-safe, thus saving a little overhead. */
-				auto xscope_aco_locker1 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj1);
-
-				typedef decltype(xscope_aco_locker1.xscope_passable_pointer()) passable_exclusive_pointer_t;
-				mse::xscope_thread xscp_thread1(J::foo17b<passable_exclusive_pointer_t>, xscope_aco_locker1.xscope_passable_pointer());
-			}
-			{
-				auto xscope_aco_locker1 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj1);
-				auto xscope_aco_locker2 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj2);
-				auto xscope_aco_locker3 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj3);
-
-				typedef decltype(xscope_aco_locker1.xscope_passable_const_pointer()) passable_const_pointer_t;
-				typedef decltype(xscope_aco_locker2.xscope_passable_pointer()) passable_exclusive_pointer_t;
-
-				mse::xscope_thread xscp_thread1(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_aco_locker1.xscope_passable_const_pointer()
-					, xscope_aco_locker2.xscope_passable_pointer());
-
-				mse::xscope_thread xscp_thread2(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_aco_locker1.xscope_passable_const_pointer()
-					, xscope_aco_locker3.xscope_passable_pointer());
-			}
-			{
-				auto xscope_aco_locker1 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj1);
-
-				/* The mse::make_xscope_exclusive_strong_pointer_store_for_sharing() function returns the same kind of "locker" object that
-				mse::make_xscope_aco_locker_for_sharing() does, but instead of taking a scope pointer to an "access controlled object", it
-				accepts any recognized "exclusive" pointer. That is, a pointer that, while it exists, holds exclusive access to
-				its target object. */
-				auto xscope_xstrong_ptr_store1 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(xscope_aco_locker1.xscope_passable_pointer());
-
-				auto xscope_aco_locker2 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj2);
-				auto xscope_aco_locker3 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj3);
-
-				typedef decltype(xscope_aco_locker1.xscope_passable_const_pointer()) passable_const_pointer_t;
-				typedef decltype(xscope_aco_locker2.xscope_passable_pointer()) passable_exclusive_pointer_t;
-
-				mse::xscope_thread xscp_thread1(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_xstrong_ptr_store1.xscope_passable_const_pointer()
-					, xscope_aco_locker2.xscope_passable_pointer());
-
-				mse::xscope_thread xscp_thread2(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_xstrong_ptr_store1.xscope_passable_const_pointer()
-					, xscope_aco_locker3.xscope_passable_pointer());
-			}
-			{
-				/* In this block we demonstrate obtaining various types of (const and non-const) pointers you might need from
-				an exclusive pointer that might be passed to a thread. */
-
-				std::cout << "mse::TXScopeExclusiveStrongPointerStoreForAccessControlFParam<>: " << std::endl;
-
-				a_xscpacobj1.pointer()->s = "";
-
-				auto xscope_aco_locker1 = mse::make_xscope_aco_locker_for_sharing(&a_xscpacobj1);
-
-				typedef decltype(xscope_aco_locker1.xscope_passable_pointer()) passable_exclusive_pointer_t;
-				typedef decltype(xscope_aco_locker1.xscope_passable_const_pointer()) passable_const_pointer_t;
-
-				class CD {
-				public:
-					/* mse::TXScopeExclusiveStrongPointerStoreForAccessControl<> is a data type that stores an exclusive strong
-					pointer. From this data type you can obtain const, non-const and exclusive pointers. 
-					mse::TXScopeExclusiveStrongPointerStoreForAccessControlFParam<> is the version for use as a function parameter.
-					So this function expects to be passed a pointer of type passable_exclusive_pointer_t. */
-					static void foo1(mse::TXScopeExclusiveStrongPointerStoreForAccessControlFParam<passable_exclusive_pointer_t> xscope_store, int count) {
-						{
-							auto xsptr = xscope_store.xscope_pointer();
-							xsptr->s.append(std::to_string(count));
-						}
-						{
-							/* Here, from the exclusive (non-const) pointer passed to this function, we're going to obtain a couple
-							of const pointers that we can pass to different (scope) threads. */
-							auto xscope_xstrong_ptr_store1 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(xscope_store.xscope_exclusive_pointer());
-
-							mse::xscope_thread xscp_thread1(CD::foo2, xscope_xstrong_ptr_store1.xscope_passable_const_pointer());
-							mse::xscope_thread xscp_thread2(CD::foo2, xscope_xstrong_ptr_store1.xscope_passable_const_pointer());
-						}
-						if (1 <= count) {
-							/* And here we're going to (re)obtain an exclusive strong pointer like the one that was passed to this
-							function, then we're going to use it to recursively call this function again in another (scope) thread. */
-							auto xscope_xstrong_ptr_store1 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(xscope_store.xscope_exclusive_pointer());
-							mse::xscope_thread xscp_thread1(CD::foo1, xscope_xstrong_ptr_store1.xscope_passable_pointer(), count - 1);
-						}
-					}
-					static void foo2(passable_const_pointer_t xscope_A_cptr) {
-						std::cout << xscope_A_cptr->s << std::endl;
-					}
-				};
-
-				mse::xscope_thread xscp_thread1(CD::foo1, xscope_aco_locker1.xscope_passable_pointer(), 3);
-
-				std::cout << std::endl;
-			}
-		}
-
-		{
-			/* TExclusiveWriterObj<> is a specialization of TAccessControlledObj<> for which all non-const pointers are
-			exclusive. That is, when a non-const pointer exists, no other pointer may exist. */
-			mse::TXScopeObj<mse::TExclusiveWriterObj<ShareableA> > a_xscpxwobj1(3);
-			mse::TXScopeObj<mse::TExclusiveWriterObj<ShareableA> > a_xscpxwobj2(5);
-			mse::TXScopeObj<mse::TExclusiveWriterObj<ShareableA> > a_xscpxwobj3(7);
-
-			{
-				/* A (non-const) pointer of an "exclusive writer object" qualifies as an "exclusive strong" pointer, and
-				thus you can obtain an xscope shareable pointer from it in the standard way. */
-				auto xscope_xwo_pointer_store1 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(a_xscpxwobj1.pointer());
-
-				typedef decltype(xscope_xwo_pointer_store1.xscope_passable_pointer()) passable_exclusive_pointer_t;
-				mse::xscope_thread xscp_thread1(J::foo17b<passable_exclusive_pointer_t>, xscope_xwo_pointer_store1.xscope_passable_pointer());
-			}
-			{
-				/* But uniquely, you can obtain an xscope shareable const pointer from a (non-exclusive) const pointer of an
-				"exclusive writer object". There is a special function for this purpose: */
-				auto xscope_xwo_const_pointer_store1 = mse::make_xscope_exclusive_write_obj_const_pointer_store_for_sharing(a_xscpxwobj1.const_pointer());
-
-				auto xscope_xwo_pointer_store2 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(a_xscpxwobj2.pointer());
-				auto xscope_xwo_pointer_store3 = mse::make_xscope_exclusive_strong_pointer_store_for_sharing(a_xscpxwobj3.pointer());
-
-				typedef decltype(xscope_xwo_const_pointer_store1.xscope_passable_const_pointer()) passable_const_pointer_t;
-				typedef decltype(xscope_xwo_pointer_store2.xscope_passable_pointer()) passable_exclusive_pointer_t;
-
-				mse::xscope_thread xscp_thread1(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_xwo_const_pointer_store1.xscope_passable_const_pointer()
-					, xscope_xwo_pointer_store2.xscope_passable_pointer());
-
-				mse::xscope_thread xscp_thread2(J::foo18<passable_const_pointer_t, passable_exclusive_pointer_t>
-					, xscope_xwo_const_pointer_store1.xscope_passable_const_pointer()
-					, xscope_xwo_pointer_store3.xscope_passable_pointer());
-			}
-		}
-
-		{
-			/* This block is similar to a previous one that demonstrates safely allowing different threads to (simultaneously)
-			modify different sections of a vector. The difference is just that here the shared vector is a pre-existing one
-			declared as a local variable (i.e. on the stack). */
-
-			static const size_t num_sections = 10;
-			static const size_t section_size = 5;
-			const size_t num_elements = num_sections * section_size;
-
-			typedef mse::nii_vector<mse::nii_string> async_shareable_vector1_t;
-			typedef mse::mstd::vector<mse::nii_string> nonshareable_vector1_t;
-			/* Let's say we have a vector. */
-			nonshareable_vector1_t vector1;
-			vector1.resize(num_elements);
-			{
-				size_t count = 0;
-				for (auto& item_ref : vector1) {
-					count += 1;
-					item_ref = "text" + std::to_string(count);
-				}
-			}
-
-			/* Only access controlled objects can be shared with other threads, so we'll make an access controlled vector and
-			(temporarily) swap it with our original one. */
-			mse::TXScopeObj<mse::TXScopeAccessControlledObj<async_shareable_vector1_t> > xscope_acobj;
-			auto xscope_ash_access_requester = mse::make_xscope_asyncsharedv2acoreadwrite(&xscope_acobj);
-			//auto ash_access_requester = mse::make_asyncsharedv2readwrite<async_shareable_vector1_t>();
-			std::swap(vector1, (*(xscope_ash_access_requester.writelock_ptr())));
-
-			std::cout << "access controlled, mse::TAsyncRASectionSplitter<>, part 1: " << std::endl;
-
-			{
-				/* Now, we're going to use the access requester to obtain two new access requesters that provide access to
-				(newly created) "random access section" objects which are used to access (disjoint) sections of the vector.
-				We need to specify the position where we want to split the vector. Here we specify that it be split at index
-				"num_elements / 2", right down the middle. */
-				mse::TXScopeAsyncRASectionSplitter<decltype(xscope_ash_access_requester)> xscope_ra_section_split1(xscope_ash_access_requester, num_elements / 2);
-				auto ar1 = xscope_ra_section_split1.first_ra_section_access_requester();
-				auto ar2 = xscope_ra_section_split1.second_ra_section_access_requester();
-
-				/* The J::foo8 template function is just an example function that operates on containers of strings. In our case the
-				containers will be the random access sections we just created. We'll create an instance of the function here. */
-				auto& my_foo8_function_ref = J::foo8<decltype(ar1.writelock_ra_section())>;
-				typedef std::remove_reference<decltype(my_foo8_function_ref)>::type my_foo8_function_type;
-
-				/* We want to execute the my_foo8 function in a separate thread. The function takes a "random access section"
-				as an argument. But as we're not allowed to pass random access sections between threads, we must pass an
-				access requester instead. The "J::invoke_with_writelock_ra_section1" template function is just a helper
-				function that will obtain a (writelock) random access section from the access requester, then call the given
-				function, in this case my_foo8, with that random access section. So here we'll use it to create a proxy
-				function that we can execute directly in a separate thread and will accept an access requester as a
-				parameter. */
-				auto& my_foo8_proxy_function_ref = J::invoke_with_writelock_ra_section1<decltype(ar1), my_foo8_function_type>;
-
-				mse::xscope_thread_carrier threads;
-				/* So this thread will modify the first section of the vector. */
-				threads.new_thread(my_foo8_proxy_function_ref, ar1, my_foo8_function_ref);
-				/* While this thread modifies the other section. */
-				threads.new_thread(my_foo8_proxy_function_ref, ar2, my_foo8_function_ref);
-
-				int q = 5;
-			}
-
-			std::cout << "access controlled, mse::TAsyncRASectionSplitter<>, part 2: " << std::endl;
-
-			{
-				/* Ok, now let's do it again, but instead of splitting the vector into two sections, let's split it into more sections: */
-				/* First we create a list of a the sizes of each section. We'll use a vector here, but any iteratable container will work. */
-				mse::mstd::vector<size_t> section_sizes;
-				for (size_t i = 0; i < num_sections; i += 1) {
-					section_sizes.push_back(section_size);
-				}
-
-				/* Just as before, TXScopeAsyncRASectionSplitter<> will generate a new access requester for each section. */
-				mse::TXScopeAsyncRASectionSplitter<decltype(xscope_ash_access_requester)> xscope_ra_section_split1(xscope_ash_access_requester, section_sizes);
-				auto ar0 = xscope_ra_section_split1.ra_section_access_requester(0);
-
-				auto& my_foo8_function_ref = J::foo8<decltype(ar0.writelock_ra_section())>;
-				typedef std::remove_reference<decltype(my_foo8_function_ref)>::type my_foo8_function_type;
-				auto& my_foo8_proxy_function_ref = J::invoke_with_writelock_ra_section1<decltype(ar0), my_foo8_function_type>;
-
-				{
-					mse::xscope_thread_carrier xscope_threads;
-					for (size_t i = 0; i < num_sections; i += 1) {
-						auto ar = xscope_ra_section_split1.ra_section_access_requester(i);
-						xscope_threads.new_thread(my_foo8_proxy_function_ref, ar, my_foo8_function_ref);
-					}
-					/* The scope will not end until all the scope threads have finished executing. */
-				}
-			}
-
-			/* Now that we're done sharing the (controlled access) vector, we can swap it back to our original vector. */
-			std::swap(vector1, (*(xscope_ash_access_requester.writelock_ptr())));
-			auto first_element_value = vector1[0];
-			auto last_element_value = vector1.back();
-
-			int q = 5;
-		}
-	}
 }
 
 
@@ -1767,3 +1626,6 @@ void msetl_example2() {
 #pragma warning( pop )  
 #endif /*_MSC_VER*/
 
+#else // !EXCLUDE_MSETL_EXAMPLE2
+void msetl_example2() {}
+#endif // !EXCLUDE_MSETL_EXAMPLE2

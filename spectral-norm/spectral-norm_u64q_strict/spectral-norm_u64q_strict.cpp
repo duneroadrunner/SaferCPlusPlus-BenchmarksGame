@@ -25,7 +25,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
-#include <omp.h>
+
+/* emmintrin.h provides an "intrisically unsafe" simd interface. When available, a safer simd interface would be preferable. */
 #include <emmintrin.h>
 
 #include <string>
@@ -73,7 +74,7 @@ void EvalPart_V2(TSrcArrayConstSection src_section, TDstArraySection dst_section
 			sum = _mm_add_pd(sum, _mm_div_pd(_mm_set1_pd(src_section[j]), idx));
 		}
 
-		_mm_storeu_pd(&(dst_section[index + 0]), sum);
+		MSE_SUPPRESS_CHECK_IN_XSCOPE _mm_storeu_pd(&(dst_section[index + 0]), sum);
 	}
 	for (; index < dst_section.size(); ++index, ++i) {
 		double sum = 0;
@@ -123,23 +124,23 @@ void EvalAtTimesU_V2(TBufferAccessRequester src_ar, TBufferAccessRequester dst_a
 		/* TXScopeAsyncRASectionSplitter<> will generate a new access requester for each section. */
 		mse::TXScopeAsyncRASectionSplitter<decltype(tmp_ar)> ra_section_split1(tmp_ar, section_sizes);
 
-		auto& EvalATimesU_V2_ar_ref = EvalATimesU_V2_ar<decltype(src_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
+		auto EvalATimesU_V2_ar_function = EvalATimesU_V2_ar<decltype(src_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
 
 		mse::xscope_thread_carrier xscope_threads;
 		for (size_t i = 0; i < num_threads; i += 1) {
 			auto ar = ra_section_split1.ra_section_access_requester(i);
-			xscope_threads.new_thread(EvalATimesU_V2_ar_ref, src_ar, N, ar, i*max_chunk_size);
+			xscope_threads.new_thread(EvalATimesU_V2_ar_function, src_ar, N, ar, i*max_chunk_size);
 		}
 		/* xscope_thread_carrier ensures that the scope will not end until all the threads have terminated. */
 	}
 	{
 		mse::TXScopeAsyncRASectionSplitter<decltype(dst_ar)> ra_section_split1(dst_ar, section_sizes);
-		auto& EvalAtTimesU_V2_ar_ref = EvalAtTimesU_V2_ar<decltype(tmp_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
+		auto EvalAtTimesU_V2_ar_function = EvalAtTimesU_V2_ar<decltype(tmp_ar), decltype(ra_section_split1.ra_section_access_requester(0))>;
 
 		mse::xscope_thread_carrier xscope_threads;
 		for (size_t i = 0; i < num_threads; i += 1) {
 			auto ar = ra_section_split1.ra_section_access_requester(i);
-			xscope_threads.new_thread(EvalAtTimesU_V2_ar_ref, tmp_ar, N, ar, i*max_chunk_size);
+			xscope_threads.new_thread(EvalAtTimesU_V2_ar_function, tmp_ar, N, ar, i*max_chunk_size);
 		}
 	}
 }
@@ -148,9 +149,9 @@ struct sums1_return_type {
 	double sumvb = 0.0;
 	double sumvv = 0.0;
 };
-/* Here "shareable" just means that the type is appropriate for sharing between threads (i.e. basically doesn't contain
-any pointers or references). */
-typedef mse::us::TUserDeclaredAsyncShareableObj<sums1_return_type> shareable_sums1_return_type;
+/* Here "shareable and passable" just means that the type is appropriate for sharing and passing between threads
+(i.e. basically doesn't contain any pointers or references). */
+typedef mse::rsv::TAsyncShareableAndPassableObj<sums1_return_type> shareable_sums1_return_type;
 
 template<class TBufferAccessRequester, class TSectionSizeList>
 shareable_sums1_return_type sums1(TBufferAccessRequester u_access_requester, TBufferAccessRequester v_access_requester
@@ -201,11 +202,11 @@ double spectral_game(mse::msear_size_t N) {
 	//ALIGNAS(16) double u[N];
 	//ALIGNAS(16) double v[N], tmp[N];
 
-	/* Arguably, the "cleanest" way of sharing objects among threads with SaferCPlusPlus involves allocating the object
-	on the heap. Pre-C++17, "over-aligned" memory allocation on the heap would require a (non-portable) custom allocator.
-	A bit of a hassle. So here we'll allocate the aligned arrays on the stack. And so we'll demonstrate the (not yet
-	documented at the time of this writing) use of the library to safely share stack allocated objects. */
+	/* Pre-C++17, "over-aligned" memory allocation on the heap would require a (non-portable) custom allocator.
+	A bit of a hassle. So here we'll allocate the aligned arrays on the stack. And so we'll demonstrate the use
+	of the library to safely share stack allocated objects. */
 
+	/* While alignment specification isn't in itself unsafe, interfaces that require aligned data presumably would be. */
 	/* First we'll declare the aligned array buffers as "access controlled" scope objects. */
 	ALIGNAS(16) mse::TXScopeObj<mse::TXScopeAccessControlledObj<double_array_buffer2_type> > xscope_u2;
 	ALIGNAS(16) mse::TXScopeObj<mse::TXScopeAccessControlledObj<double_array_buffer2_type> > xscope_v2;

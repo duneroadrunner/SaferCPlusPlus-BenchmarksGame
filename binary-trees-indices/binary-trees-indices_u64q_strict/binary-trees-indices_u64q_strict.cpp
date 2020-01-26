@@ -15,7 +15,6 @@ modified for Swift 3.0 by Daniel Muellenborn
 #include <iostream>
 #include <stdlib.h>
 #include <stdio.h>
-#include <omp.h>
 #include <algorithm>
 #include <vector>
 #include <string>

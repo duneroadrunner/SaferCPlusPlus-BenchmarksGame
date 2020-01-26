@@ -18,6 +18,8 @@ modified by Vaclav Zeman
 #include <cmath>
 #include <cstdlib>
 #include <array>
+
+/* immintrin.h provides an "intrisically unsafe" simd interface. When available, a safer simd interface would be preferable. */
 #include <immintrin.h>
 
 #include <string>
@@ -27,6 +29,7 @@ modified by Vaclav Zeman
 #define MSE_MSEARRAY_USE_MSE_PRIMITIVES 1
 #include "mseprimitives.h"
 #include "msemstdarray.h"
+#include "msethreadlocal.h"
 
 static const double PI = 3.141592653589793;
 static const double SOLAR_MASS = 4 * PI * PI;
@@ -48,7 +51,7 @@ public:
 	Body() {}
 
 	static Body jupiter() {
-		static Body p;
+		MSE_DECLARE_THREAD_LOCAL(Body) p;
 		p.x = 4.84143144246472090e+00;
 		p.y = -1.16032004402742839e+00;
 		p.z = -1.03622044471123109e-01;
@@ -60,7 +63,7 @@ public:
 	}
 
 	static Body saturn() {
-		static Body p;
+		MSE_DECLARE_THREAD_LOCAL(Body) p;
 		p.x = 8.34336671824457987e+00;
 		p.y = 4.12479856412430479e+00;
 		p.z = -4.03523417114321381e-01;
@@ -72,7 +75,7 @@ public:
 	}
 
 	static Body uranus() {
-		static Body p;
+		MSE_DECLARE_THREAD_LOCAL(Body) p;
 		p.x = 1.28943695621391310e+01;
 		p.y = -1.51111514016986312e+01;
 		p.z = -2.23307578892655734e-01;
@@ -84,7 +87,7 @@ public:
 	}
 
 	static Body neptune() {
-		static Body p;
+		MSE_DECLARE_THREAD_LOCAL(Body) p;
 		p.x = 1.53796971148509165e+01;
 		p.y = -2.59193146099879641e+01;
 		p.z = 1.79258772950371181e-01;
@@ -96,7 +99,7 @@ public:
 	}
 
 	static Body sun() {
-		static Body p;
+		MSE_DECLARE_THREAD_LOCAL(Body) p;
 		p.mass = SOLAR_MASS;
 		return p;
 	}
@@ -143,12 +146,13 @@ public:
 			double filler = 0;
 		};
 		//static R r[1000];
-		static mse::mstd::array<R, 1000> r;
+		typedef mse::nii_array<R, 1000> arrayR1000_t;
+		MSE_DECLARE_THREAD_LOCAL(arrayR1000_t) r;
 
 		//static ALIGNAS(16) double mag[1000];
-		/* We use mse::msearray<> here because mse::msearray<> has extra members that interfere with
-		alignment specifiers. */
-		static ALIGNAS(16) mse::msearray<double, 1000> mag;
+		/* The (legacy) simd interface being used calls for the use of explicit alignment specifiers. */
+		/* While alignment specification isn't in itself unsafe, interfaces that require aligned data presumably would be. */
+		ALIGNAS(16) mse::TXScopeObj<mse::nii_array<double, 1000> > mag;
 
 		for (mse::msear_size_t i = 0, k = 0; i < bodies.size() - 1; ++i) {
 			//Body& iBody = bodies[i];
@@ -159,9 +163,10 @@ public:
 			}
 		}
 
-		__m128d dx = __m128d();
-		__m128d dy = __m128d();
-		__m128d dz = __m128d();
+		MSE_SUPPRESS_CHECK_IN_XSCOPE static const __m128d sc_default_m128d_value = __m128d();
+		__m128d dx = sc_default_m128d_value;
+		__m128d dy = sc_default_m128d_value;
+		__m128d dz = sc_default_m128d_value;
 		for (mse::msear_size_t i = 0; i < N; i += 2) {
 			dx = _mm_loadl_pd(dx, &r[i].dx);
 			dy = _mm_loadl_pd(dy, &r[i].dy);

@@ -21,10 +21,11 @@
 #include "msemstdarray.h"
 #include "msemsestring.h"
 #include "msemstdstring.h"
+#include "msestaticimmutable.h"
 #include <memory>
-#include <iostream>
 #include <utility>
 #include <cassert>
+
 
 #include <typeinfo>
 #include <typeindex>
@@ -35,13 +36,11 @@
 #include <map>
 #include <string>
 
-#ifdef _MSC_VER
-#pragma warning( push )  
-#pragma warning( disable : 4100 4456 4189 )
-#endif /*_MSC_VER*/
+#ifndef MSE_PUSH_MACRO_NOT_SUPPORTED
+#pragma push_macro("MSE_THROW")
+#endif // !MSE_PUSH_MACRO_NOT_SUPPORTED
 
 #ifdef MSE_CUSTOM_THROW_DEFINITION
-#include <iostream>
 #define MSE_THROW(x) MSE_CUSTOM_THROW_DEFINITION(x)
 #else // MSE_CUSTOM_THROW_DEFINITION
 #define MSE_THROW(x) throw(x)
@@ -51,15 +50,26 @@
 #define MSE_POLYPOINTER_DISABLED
 #endif /*MSE_SAFER_SUBSTITUTES_DISABLED*/
 
+#ifdef _MSC_VER
+#pragma warning( push )  
+#pragma warning( disable : 4100 4456 4189 4503 4996 )
+#endif /*_MSC_VER*/
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
 namespace mse {
 
 #ifdef MSE_POLYPOINTER_DISABLED
 #else /*MSE_POLYPOINTER_DISABLED*/
 #endif /*MSE_POLYPOINTER_DISABLED*/
-
-#if defined(_MSC_VER)
-#pragma warning(disable:4503)
-#endif
 
 	namespace impl {
 		/* The original variant code came from: https://gist.github.com/tibordp/6909880 */
@@ -303,7 +313,7 @@ namespace mse {
 			, void>::type>
 			TXScopeAnyPointer(const _TPointer1& pointer) : base_class(pointer) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		TXScopeAnyPointer<_Ty>& operator=(const TXScopeAnyPointer<_Ty>& _Right_cref) {
@@ -316,6 +326,19 @@ namespace mse {
 		friend struct std::hash<mse::TXScopeAnyPointer<_Ty> >;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_pointer(const _Ty& x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_pointer(_Ty&& x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_pointer)
+
 	/* The intended semantics of "any" pointers is that they always contain a valid pointer (or iterator) to a valid
 	object. If you need a "null" state, consider using optional<> (or mse::TNullableAnyPointer<>). */
 	template <typename _Ty>
@@ -327,22 +350,34 @@ namespace mse {
 		template <typename _TPointer1, class = typename std::enable_if<
 			(!std::is_convertible<_TPointer1, TAnyPointer>::value)
 			&& (!std::is_base_of<TAnyConstPointer<_Ty>, _TPointer1>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TPointer1>::value)
 			, void>::type>
-			TAnyPointer(const _TPointer1& pointer) : base_class(pointer) {}
+		TAnyPointer(const _TPointer1& pointer) : base_class(pointer) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TPointer1>();
+		}
 
 		TAnyPointer<_Ty>& operator=(const TAnyPointer<_Ty>& _Right_cref) {
 			base_class::operator=(static_cast<const base_class&>(_Right_cref));
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 		friend struct std::hash<mse::TAnyPointer<_Ty> >;
 	};
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
 
 	template <typename _Ty>
 	class TXScopeAnyConstPointer : public us::impl::TAnyConstPointerBase<_Ty>, public mse::us::impl::XScopeContainsNonOwningScopeReferenceTagBase {
@@ -357,7 +392,7 @@ namespace mse {
 			, void>::type>
 			TXScopeAnyConstPointer(const _TPointer1& pointer) : base_class(pointer) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		TXScopeAnyConstPointer<_Ty>& operator=(const TXScopeAnyConstPointer<_Ty>& _Right_cref) {
@@ -370,6 +405,20 @@ namespace mse {
 		friend struct std::hash<mse::TXScopeAnyConstPointer<_Ty> >;
 	};
 
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_const_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyConstPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_const_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyConstPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_const_pointer)
+
 	template <typename _Ty>
 	class TAnyConstPointer : public us::impl::TAnyConstPointerBase<_Ty> {
 	public:
@@ -380,22 +429,34 @@ namespace mse {
 		template <typename _TPointer1, class = typename std::enable_if<
 			(!std::is_convertible<_TPointer1, TAnyConstPointer>::value)
 			&& (!std::is_convertible<_TPointer1, TAnyPointer<_Ty>>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TPointer1>::value)
 			, void>::type>
-			TAnyConstPointer(const _TPointer1& pointer) : base_class(pointer) {}
+		TAnyConstPointer(const _TPointer1& pointer) : base_class(pointer) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TPointer1>();
+		}
 
 		TAnyConstPointer<_Ty>& operator=(const TAnyConstPointer<_Ty>& _Right_cref) {
 			base_class::operator=(static_cast<const base_class&>(_Right_cref));
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 		friend struct std::hash<mse::TAnyConstPointer<_Ty> >;
 	};
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_const_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyConstPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_const_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyConstPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
 
 	namespace rsv {
 		template<typename _Ty>
@@ -407,7 +468,7 @@ namespace mse {
 			template<typename _TRALoneParam>
 			TFParam(_TRALoneParam&& src) : base_class(constructor_helper1(
 #ifndef MSE_SCOPEPOINTER_DISABLED
-				typename mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::type()
+				typename mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::type()
 #else //!MSE_SCOPEPOINTER_DISABLED
 				std::false_type()
 #endif //!MSE_SCOPEPOINTER_DISABLED
@@ -584,10 +645,10 @@ namespace mse {
 				TPolyPointerBase(const mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWritePointer<_Ty>& p) { m_pointer.template set<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWritePointer<_Ty>>(p); }
 
 				_Ty& operator*() const {
-					return *(reinterpret_cast<_Ty*>(m_pointer.arrow_operator()));
+					return *(static_cast<_Ty*>(m_pointer.arrow_operator()));
 				}
 				_Ty* operator->() const {
-					return reinterpret_cast<_Ty*>(m_pointer.arrow_operator());
+					return static_cast<_Ty*>(m_pointer.arrow_operator());
 				}
 				template <typename _Ty2>
 				bool operator ==(const _Ty2& _Right_cref) const {
@@ -632,7 +693,7 @@ namespace mse {
 			, void>::type>
 			TXScopePolyPointer(const _TPointer1& pointer) : base_class(pointer) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		TXScopePolyPointer<_Ty>& operator=(const TXScopePolyPointer<_Ty>& _Right_cref) {
@@ -644,6 +705,19 @@ namespace mse {
 		friend struct std::hash<mse::TXScopePolyPointer<_Ty> >;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_poly_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopePolyPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_poly_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopePolyPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_poly_pointer)
+
 	/* The intended semantics of poly pointers is that they always contain a valid pointer (or iterator) to a valid
 	object. If you need a "null" state, consider using optional<>. */
 	template<typename _Ty>
@@ -654,23 +728,34 @@ namespace mse {
 		//MSE_USING(TPolyPointer, us::impl::TPolyPointerBase<_Ty>);
 		//TPolyPointer(const us::impl::TPolyPointerBase<_Ty>& p) : base_class(p) {}
 
-		template <typename _TPointer1, class = typename std::enable_if<
-			(!std::is_base_of<mse::us::impl::XScopeTagBase, _TPointer1>::value)
-			, void>::type>
-			TPolyPointer(const _TPointer1& pointer) : base_class(pointer) {}
+		template <typename _TPointer1>
+		TPolyPointer(const _TPointer1& pointer) : base_class(pointer) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TPointer1>();
+		}
 
 		TPolyPointer<_Ty>& operator=(const TPolyPointer<_Ty>& _Right_cref) {
 			base_class::operator=(_Right_cref);
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 		friend struct std::hash<mse::TPolyPointer<_Ty> >;
 	};
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_poly_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TPolyPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_poly_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TPolyPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
 
 	namespace us {
 		namespace impl {
@@ -798,10 +883,10 @@ namespace mse {
 				TPolyConstPointerBase(const mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWritePointer<_Ty>& p) { m_pointer.template set<mse::TAsyncSharedObjectThatYouAreSureHasNoUnprotectedMutablesReadWriteConstPointer<_Ty>>(p); }
 
 				const _Ty& operator*() const {
-					return *(reinterpret_cast<const _Ty*>(m_pointer.const_arrow_operator()));
+					return *(static_cast<const _Ty*>(m_pointer.const_arrow_operator()));
 				}
 				const _Ty* operator->() const {
-					return reinterpret_cast<const _Ty*>(m_pointer.const_arrow_operator());
+					return static_cast<const _Ty*>(m_pointer.const_arrow_operator());
 				}
 				template <typename _Ty2>
 				bool operator ==(const _Ty2& _Right_cref) const {
@@ -843,7 +928,7 @@ namespace mse {
 			, void>::type*/>
 			TXScopePolyConstPointer(const _TPointer1& pointer) : base_class(pointer) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		TXScopePolyConstPointer<_Ty>& operator=(const TXScopePolyConstPointer<_Ty>& _Right_cref) {
@@ -855,6 +940,19 @@ namespace mse {
 		friend struct std::hash<mse::TXScopePolyConstPointer<_Ty> >;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_poly_const_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopePolyConstPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_poly_const_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopePolyConstPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_poly_const_pointer)
+
 	template<typename _Ty>
 	class TPolyConstPointer : public us::impl::TPolyConstPointerBase<_Ty> {
 	public:
@@ -862,23 +960,34 @@ namespace mse {
 		//TPolyConstPointer(const TPolyConstPointer& src) : base_class(src) {}
 		//TPolyConstPointer(const TPolyPointer<_Ty>& src) : base_class(src) {}
 
-		template <typename _TPointer1, class = typename std::enable_if<
-			(!std::is_base_of<mse::us::impl::XScopeTagBase, _TPointer1>::value)
-			, void>::type>
-			TPolyConstPointer(const _TPointer1& pointer) : base_class(pointer) {}
+		template <typename _TPointer1>
+		TPolyConstPointer(const _TPointer1& pointer) : base_class(pointer) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TPointer1>();
+		}
 
 		TPolyConstPointer<_Ty>& operator=(const TPolyConstPointer<_Ty>& _Right_cref) {
 			base_class::operator=(_Right_cref);
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 		friend struct std::hash<mse::TPolyConstPointer<_Ty> >;
 	};
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_poly_const_pointer(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TPolyConstPointer<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_poly_const_pointer(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TPolyConstPointer<_Tx2>(std::forward<decltype(x)>(x));
+	}
 
 	namespace rsv {
 		template<typename _Ty>
@@ -890,7 +999,7 @@ namespace mse {
 			template<typename _TRALoneParam>
 			TFParam(_TRALoneParam&& src) : base_class(constructor_helper1(
 #ifndef MSE_SCOPEPOINTER_DISABLED
-				typename mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::type()
+				typename mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::type()
 #else //!MSE_SCOPEPOINTER_DISABLED
 				std::false_type()
 #endif //!MSE_SCOPEPOINTER_DISABLED
@@ -979,13 +1088,12 @@ namespace mse {
 			class TCommonRandomAccessIteratorInterface : public TRandomAccessIteratorStdBase<_Ty> {
 			public:
 				typedef TRandomAccessIteratorStdBase<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 				virtual ~TCommonRandomAccessIteratorInterface() {}
 				virtual _Ty& operator*() const = 0;
 				virtual _Ty* operator->() const = 0;
-				typedef typename base_class::reference reference_t;
-				typedef typename base_class::difference_type difference_type;
-				virtual reference_t operator[](difference_type _Off) const = 0;
+				virtual reference operator[](difference_type _Off) const = 0;
 				virtual void operator +=(difference_type x) = 0;
 				virtual void operator -=(difference_type x) { operator +=(-x); }
 				virtual void operator ++() { operator +=(1); }
@@ -1004,6 +1112,9 @@ namespace mse {
 			template <typename _Ty, typename _TRandomAccessIterator1>
 			class TCommonizedRandomAccessIterator : public TCommonRandomAccessIteratorInterface<_Ty> {
 			public:
+				typedef TCommonRandomAccessIteratorInterface<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
+
 				TCommonizedRandomAccessIterator(const _TRandomAccessIterator1& random_access_iterator) : m_random_access_iterator(random_access_iterator) {}
 				virtual ~TCommonizedRandomAccessIterator() {}
 
@@ -1014,11 +1125,11 @@ namespace mse {
 					return std::addressof(*m_random_access_iterator);
 					//return m_random_access_iterator.operator->();
 				}
-				typename TCommonRandomAccessIteratorInterface<_Ty>::reference_t operator[](typename TCommonRandomAccessIteratorInterface<_Ty>::difference_type _Off) const {
+				reference operator[](difference_type _Off) const {
 					return m_random_access_iterator[_Off];
 				}
-				void operator +=(typename TCommonRandomAccessIteratorInterface<_Ty>::difference_type x) { m_random_access_iterator += x; }
-				typename TCommonRandomAccessIteratorInterface<_Ty>::difference_type operator-(const TCommonRandomAccessIteratorInterface<_Ty>& _Right_cref) const {
+				void operator +=(difference_type x) { m_random_access_iterator += x; }
+				difference_type operator-(const TCommonRandomAccessIteratorInterface<_Ty>& _Right_cref) const {
 					const TCommonizedRandomAccessIterator* crai_ptr = static_cast<const TCommonizedRandomAccessIterator*>(&_Right_cref);
 					assert(crai_ptr);
 					const _TRandomAccessIterator1& _Right_cref_m_random_access_iterator_cref = (*crai_ptr).m_random_access_iterator;
@@ -1031,6 +1142,9 @@ namespace mse {
 			template <typename _Ty>
 			class TAnyRandomAccessIteratorBase : public TRandomAccessIteratorStdBase<_Ty> {
 			public:
+				typedef TRandomAccessIteratorStdBase<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
+
 				TAnyRandomAccessIteratorBase(const TAnyRandomAccessIteratorBase& src) : m_any_random_access_iterator(src.m_any_random_access_iterator) {}
 				TAnyRandomAccessIteratorBase(_Ty arr[]) : m_any_random_access_iterator(TCommonizedRandomAccessIterator<_Ty, _Ty*>(arr)) {}
 
@@ -1047,9 +1161,7 @@ namespace mse {
 				_Ty* operator->() const {
 					return common_random_access_iterator_interface_ptr()->operator->();
 				}
-				typedef typename TCommonRandomAccessIteratorInterface<_Ty>::reference_t reference_t;
-				typedef typename TCommonRandomAccessIteratorInterface<_Ty>::difference_type difference_type;
-				reference_t operator[](difference_type _Off) const {
+				reference operator[](difference_type _Off) const {
 					return common_random_access_iterator_interface_ptr()->operator[](_Off);
 				}
 				void operator +=(difference_type x) { common_random_access_iterator_interface_ptr()->operator+=(x); }
@@ -1079,12 +1191,12 @@ namespace mse {
 				MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 				TCommonRandomAccessIteratorInterface<_Ty>* common_random_access_iterator_interface_ptr() {
-					auto retval = reinterpret_cast<TCommonRandomAccessIteratorInterface<_Ty>*>(m_any_random_access_iterator.storage_address());
+					auto retval = static_cast<TCommonRandomAccessIteratorInterface<_Ty>*>(m_any_random_access_iterator.storage_address());
 					assert(nullptr != retval);
 					return retval;
 				}
 				const TCommonRandomAccessIteratorInterface<_Ty>* common_random_access_iterator_interface_ptr() const {
-					auto retval = reinterpret_cast<const TCommonRandomAccessIteratorInterface<_Ty>*>(m_any_random_access_iterator.storage_address());
+					auto retval = static_cast<const TCommonRandomAccessIteratorInterface<_Ty>*>(m_any_random_access_iterator.storage_address());
 					assert(nullptr != retval);
 					return retval;
 				}
@@ -1096,13 +1208,12 @@ namespace mse {
 			class TCommonRandomAccessConstIteratorInterface : public TRandomAccessConstIteratorStdBase<_Ty> {
 			public:
 				typedef TRandomAccessConstIteratorStdBase<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 				virtual ~TCommonRandomAccessConstIteratorInterface() {}
 				virtual const _Ty& operator*() const = 0;
 				virtual const _Ty* operator->() const = 0;
-				typedef typename base_class::reference const_reference_t;
-				typedef typename base_class::difference_type difference_type;
-				virtual const_reference_t operator[](difference_type _Off) const = 0;
+				virtual const_reference operator[](difference_type _Off) const = 0;
 				virtual void operator +=(difference_type x) = 0;
 				virtual void operator -=(difference_type x) { operator +=(-x); }
 				virtual void operator ++() { operator +=(1); }
@@ -1121,6 +1232,9 @@ namespace mse {
 			template <typename _Ty, typename _TRandomAccessConstIterator1>
 			class TCommonizedRandomAccessConstIterator : public TCommonRandomAccessConstIteratorInterface<_Ty> {
 			public:
+				typedef TCommonRandomAccessConstIteratorInterface<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
+
 				TCommonizedRandomAccessConstIterator(const _TRandomAccessConstIterator1& random_access_const_iterator) : m_random_access_const_iterator(random_access_const_iterator) {}
 				virtual ~TCommonizedRandomAccessConstIterator() {}
 
@@ -1131,11 +1245,11 @@ namespace mse {
 					return std::addressof(*m_random_access_const_iterator);
 					//return m_random_access_const_iterator.operator->();
 				}
-				typename TCommonRandomAccessConstIteratorInterface<_Ty>::const_reference_t operator[](typename TCommonRandomAccessConstIteratorInterface<_Ty>::difference_type _Off) const {
+				const_reference operator[](difference_type _Off) const {
 					return m_random_access_const_iterator[_Off];
 				}
-				void operator +=(typename TCommonRandomAccessConstIteratorInterface<_Ty>::difference_type x) { m_random_access_const_iterator += x; }
-				typename TCommonRandomAccessIteratorInterface<_Ty>::difference_type operator-(const TCommonRandomAccessConstIteratorInterface<_Ty>& _Right_cref) const {
+				void operator +=(difference_type x) { m_random_access_const_iterator += x; }
+				difference_type operator-(const TCommonRandomAccessConstIteratorInterface<_Ty>& _Right_cref) const {
 					const TCommonizedRandomAccessConstIterator* crai_ptr = static_cast<const TCommonizedRandomAccessConstIterator*>(&_Right_cref);
 					assert(crai_ptr);
 					const _TRandomAccessConstIterator1& _Right_cref_m_random_access_const_iterator_cref = (*crai_ptr).m_random_access_const_iterator;
@@ -1148,6 +1262,9 @@ namespace mse {
 			template <typename _Ty>
 			class TAnyRandomAccessConstIteratorBase : public TRandomAccessConstIteratorStdBase<_Ty> {
 			public:
+				typedef TRandomAccessConstIteratorStdBase<_Ty> base_class;
+				MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
+
 				TAnyRandomAccessConstIteratorBase(const TAnyRandomAccessConstIteratorBase& src) : m_any_random_access_const_iterator(src.m_any_random_access_const_iterator) {}
 				TAnyRandomAccessConstIteratorBase(const _Ty arr[]) : m_any_random_access_const_iterator(TCommonizedRandomAccessConstIterator<const _Ty, const _Ty*>(arr)) {}
 
@@ -1164,9 +1281,7 @@ namespace mse {
 				const _Ty* operator->() const {
 					return common_random_access_const_iterator_interface_ptr()->operator->();
 				}
-				typedef typename TCommonRandomAccessConstIteratorInterface<_Ty>::const_reference_t const_reference_t;
-				typedef typename TCommonRandomAccessConstIteratorInterface<_Ty>::difference_type difference_type;
-				const_reference_t operator[](difference_type _Off) const {
+				const_reference operator[](difference_type _Off) const {
 					return common_random_access_const_iterator_interface_ptr()->operator[](_Off);
 				}
 				void operator +=(difference_type x) { common_random_access_const_iterator_interface_ptr()->operator+=(x); };
@@ -1196,12 +1311,12 @@ namespace mse {
 				MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 
 				TCommonRandomAccessConstIteratorInterface<_Ty>* common_random_access_const_iterator_interface_ptr() {
-					auto retval = reinterpret_cast<TCommonRandomAccessConstIteratorInterface<_Ty>*>(m_any_random_access_const_iterator.storage_address());
+					auto retval = static_cast<TCommonRandomAccessConstIteratorInterface<_Ty>*>(m_any_random_access_const_iterator.storage_address());
 					assert(nullptr != retval);
 					return retval;
 				}
 				const TCommonRandomAccessConstIteratorInterface<_Ty>* common_random_access_const_iterator_interface_ptr() const {
-					auto retval = reinterpret_cast<const TCommonRandomAccessConstIteratorInterface<_Ty>*>(m_any_random_access_const_iterator.storage_address());
+					auto retval = static_cast<const TCommonRandomAccessConstIteratorInterface<_Ty>*>(m_any_random_access_const_iterator.storage_address());
 					assert(nullptr != retval);
 					return retval;
 				}
@@ -1215,10 +1330,9 @@ namespace mse {
 	class TXScopeAnyRandomAccessIterator : public us::impl::TAnyRandomAccessIteratorBase<_Ty>, public mse::us::impl::XScopeContainsNonOwningScopeReferenceTagBase {
 	public:
 		typedef us::impl::TAnyRandomAccessIteratorBase<_Ty> base_class;
+		MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 		MSE_USING(TXScopeAnyRandomAccessIterator, base_class);
-
-		typedef typename base_class::difference_type difference_type;
 
 		TXScopeAnyRandomAccessIterator& operator ++() { base_class::operator +=(1); return (*this); }
 		TXScopeAnyRandomAccessIterator operator ++(int) { auto _Tmp = (*this); base_class::operator +=(1); return _Tmp; }
@@ -1236,7 +1350,7 @@ namespace mse {
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		MSE_DEFAULT_OPERATOR_NEW_AND_AMPERSAND_DECLARATION;
@@ -1244,14 +1358,26 @@ namespace mse {
 		friend class TAnyRandomAccessIterator<_Ty>;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_random_access_iterator(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyRandomAccessIterator<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_random_access_iterator(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyRandomAccessIterator<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_random_access_iterator)
+
 	template <typename _Ty>
 	class TXScopeAnyRandomAccessConstIterator : public us::impl::TAnyRandomAccessConstIteratorBase<_Ty>, public mse::us::impl::XScopeContainsNonOwningScopeReferenceTagBase {
 	public:
 		typedef us::impl::TAnyRandomAccessConstIteratorBase<_Ty> base_class;
+		MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 		MSE_USING(TXScopeAnyRandomAccessConstIterator, base_class);
-
-		typedef typename base_class::difference_type difference_type;
 
 		TXScopeAnyRandomAccessConstIterator& operator ++() { base_class::operator +=(1); return (*this); }
 		TXScopeAnyRandomAccessConstIterator operator ++(int) { auto _Tmp = (*this); base_class::operator +=(1); return _Tmp; }
@@ -1269,7 +1395,7 @@ namespace mse {
 			return (*this);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	protected:
 		MSE_DEFAULT_OPERATOR_NEW_AND_AMPERSAND_DECLARATION;
@@ -1277,20 +1403,34 @@ namespace mse {
 		friend class TAnyRandomAccessConstIterator<_Ty>;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_random_access_const_iterator(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyRandomAccessConstIterator<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_xscope_any_random_access_const_iterator(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TXScopeAnyRandomAccessConstIterator<_Tx2>(std::forward<decltype(x)>(x));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_random_access_const_iterator)
+
 	template <typename _Ty>
 	class TAnyRandomAccessIterator : public us::impl::TAnyRandomAccessIteratorBase<_Ty> {
 	public:
 		typedef us::impl::TAnyRandomAccessIteratorBase<_Ty> base_class;
-		typedef typename base_class::difference_type difference_type;
+		MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 		TAnyRandomAccessIterator(const TAnyRandomAccessIterator& src) : base_class(src) {}
 		TAnyRandomAccessIterator(_Ty arr[]) : base_class(arr) {}
 		template <typename _TRandomAccessIterator1, class = typename std::enable_if<
 			(!std::is_convertible<_TRandomAccessIterator1, TAnyRandomAccessIterator>::value)
 			&& (!std::is_base_of<TAnyRandomAccessConstIterator<_Ty>, _TRandomAccessIterator1>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TRandomAccessIterator1>::value)
 			, void>::type>
-			TAnyRandomAccessIterator(const _TRandomAccessIterator1& random_access_iterator) : base_class(random_access_iterator) {}
+		TAnyRandomAccessIterator(const _TRandomAccessIterator1& random_access_iterator) : base_class(random_access_iterator) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TRandomAccessIterator1>();
+		}
 
 		TAnyRandomAccessIterator& operator ++() { base_class::operator ++(); return (*this); }
 		TAnyRandomAccessIterator operator ++(int) { auto _Tmp = (*this); base_class::operator +=(1); return _Tmp; }
@@ -1303,17 +1443,28 @@ namespace mse {
 
 		TAnyRandomAccessIterator& operator=(TAnyRandomAccessIterator _Right) { base_class::operator=(_Right); return (*this); }
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 	};
 
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_random_access_iterator(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyRandomAccessIterator<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_random_access_iterator(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyRandomAccessIterator<_Tx2>(std::forward<decltype(x)>(x));
+	}
+
 	template <typename _Ty>
 	class TAnyRandomAccessConstIterator : public us::impl::TAnyRandomAccessConstIteratorBase<_Ty> {
 	public:
 		typedef us::impl::TAnyRandomAccessConstIteratorBase<_Ty> base_class;
-		typedef typename base_class::difference_type difference_type;
+		MSE_INHERITED_RANDOM_ACCESS_MEMBER_TYPE_DECLARATIONS(base_class);
 
 		TAnyRandomAccessConstIterator(const TAnyRandomAccessConstIterator& src) : base_class(src) {}
 		TAnyRandomAccessConstIterator(const TAnyRandomAccessIterator<_Ty>& src) : base_class(src) {}
@@ -1322,9 +1473,13 @@ namespace mse {
 		template <typename _TRandomAccessConstIterator1, class = typename std::enable_if<
 			(!std::is_convertible<_TRandomAccessConstIterator1, TAnyRandomAccessConstIterator<_Ty>>::value)
 			&& (!std::is_base_of<TAnyRandomAccessIterator<_Ty>, _TRandomAccessConstIterator1>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TRandomAccessConstIterator1>::value)
 			, void>::type>
-		TAnyRandomAccessConstIterator(const _TRandomAccessConstIterator1& random_access_const_iterator) : base_class(random_access_const_iterator) {}
+		TAnyRandomAccessConstIterator(const _TRandomAccessConstIterator1& random_access_const_iterator) : base_class(random_access_const_iterator) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TRandomAccessConstIterator1>();
+#if (!defined(MSE_SOME_NON_XSCOPE_POINTER_TYPE_IS_DISABLED)) && (!defined(MSE_SAFER_SUBSTITUTES_DISABLED))
+			//mse::impl::T_valid_if_not_an_xscope_type<_TRandomAccessConstIterator1>();
+#endif // (!defined(MSE_SOME_NON_XSCOPE_POINTER_TYPE_IS_DISABLED)) && (!defined(MSE_SAFER_SUBSTITUTES_DISABLED))
+		}
 
 		TAnyRandomAccessConstIterator& operator ++() { base_class::operator ++(); return (*this); }
 		TAnyRandomAccessConstIterator operator ++(int) { auto _Tmp = (*this); base_class::operator +=(1); return _Tmp; }
@@ -1337,21 +1492,43 @@ namespace mse {
 
 		TAnyRandomAccessConstIterator& operator=(const TAnyRandomAccessConstIterator& _Right) { base_class::operator=(_Right); return (*this); }
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
 	};
+
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_random_access_const_iterator(const _Ty & x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyRandomAccessConstIterator<_Tx2>(x);
+	}
+	template <typename _Tx = void, typename _Ty = void>
+	auto make_any_random_access_const_iterator(_Ty && x) {
+		typedef typename std::conditional<std::is_same<_Tx, void>::value, typename std::remove_reference<decltype(*x)>::type, _Tx>::type _Tx2;
+		return TAnyRandomAccessConstIterator<_Tx2>(std::forward<decltype(x)>(x));
+	}
 
 
 	template <typename _Ty>
 	class TXScopeAnyRandomAccessSection : public TXScopeRandomAccessSection<TXScopeAnyRandomAccessIterator<_Ty>> {
 	public:
 		typedef TXScopeRandomAccessSection<TXScopeAnyRandomAccessIterator<_Ty>> base_class;
+		typedef TXScopeAnyRandomAccessIterator<_Ty> iterator_type;
+		MSE_INHERITED_RANDOM_ACCESS_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
+
 		MSE_USING(TXScopeAnyRandomAccessSection, base_class);
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_xscope_any_random_access_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_random_access_section(std::forward<_Args>(_Ax)...)) ra_section_t;
+		return TXScopeAnyRandomAccessSection<typename ra_section_t::value_type>(make_xscope_random_access_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_random_access_section)
 
 	template <typename _Ty>
 	class TAnyRandomAccessSection : public TRandomAccessSection<TAnyRandomAccessIterator<_Ty>> {
@@ -1359,8 +1536,14 @@ namespace mse {
 		typedef TRandomAccessSection<TAnyRandomAccessIterator<_Ty>> base_class;
 		MSE_USING(TAnyRandomAccessSection, base_class);
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_any_random_access_section(_Args&& ... _Ax) {
+		typedef decltype(make_random_access_section(std::forward<_Args>(_Ax)...)) ra_section_t;
+		return TAnyRandomAccessSection<typename ra_section_t::value_type>(make_random_access_section(std::forward<_Args>(_Ax)...));
+	}
 
 	template <typename _Ty>
 	class TXScopeAnyRandomAccessConstSection : public TXScopeRandomAccessConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>> {
@@ -1368,8 +1551,16 @@ namespace mse {
 		typedef TXScopeRandomAccessConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>> base_class;
 		MSE_USING(TXScopeAnyRandomAccessConstSection, base_class);
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_xscope_any_random_access_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_random_access_const_section(std::forward<_Args>(_Ax)...)) ra_section_t;
+		return TXScopeAnyRandomAccessConstSection<typename ra_section_t::value_type>(make_xscope_random_access_const_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_random_access_const_section)
 
 	template <typename _Ty>
 	class TAnyRandomAccessConstSection : public TRandomAccessConstSection<TAnyRandomAccessConstIterator<_Ty>> {
@@ -1377,8 +1568,14 @@ namespace mse {
 		typedef TRandomAccessConstSection<TAnyRandomAccessConstIterator<_Ty>> base_class;
 		MSE_USING(TAnyRandomAccessConstSection, base_class);
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_any_random_access_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_random_access_const_section(std::forward<_Args>(_Ax)...)) ra_section_t;
+		return TAnyRandomAccessConstSection<typename ra_section_t::value_type>(make_random_access_const_section(std::forward<_Args>(_Ax)...));
+	}
 
 	namespace rsv {
 		template<typename _Ty>
@@ -1391,8 +1588,8 @@ namespace mse {
 			TFParam(_TRALoneParam&& src) : base_class(constructor_helper1(
 #ifndef MSE_SCOPEPOINTER_DISABLED
 				typename std::conditional<
-				mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::value
-				|| mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedRandomAccessConstSectionToRValue>::value
+				mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::value
+				|| mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedRandomAccessConstSectionToRValue>::value
 				, std::true_type, std::false_type>::type()
 #else //!MSE_SCOPEPOINTER_DISABLED
 				std::false_type()
@@ -1424,48 +1621,66 @@ namespace mse {
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	using TXScopeAnyStringSection = TXScopeStringSection<TXScopeAnyRandomAccessIterator<_Ty>, _Traits>;
 
+	template <class... _Args>
+	auto make_xscope_any_string_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_string_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TXScopeAnyStringSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_xscope_string_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_string_section)
+
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	using TAnyStringSection = TStringSection<TAnyRandomAccessIterator<_Ty>, _Traits>;
+
+	template <class... _Args>
+	auto make_any_string_section(_Args&& ... _Ax) {
+		typedef decltype(make_string_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TAnyStringSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_string_section(std::forward<_Args>(_Ax)...));
+	}
 
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	class TXScopeAnyStringConstSection : public TXScopeStringConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>, _Traits> {
 	public:
 		typedef TXScopeStringConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		MSE_USING(TXScopeAnyStringConstSection, base_class);
-		TXScopeAnyStringConstSection() : base_class(&s_default_string_ref()) {}
+		TXScopeAnyStringConstSection() : base_class(s_default_string_siptr()) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
-		static auto& s_default_string_ref() { static /*const*/ mse::nii_basic_string<nonconst_value_type, _Traits> s_default_string; return s_default_string; }
+		static auto s_default_string_siptr() { typedef mse::nii_basic_string<nonconst_value_type, _Traits> str_t; MSE_DECLARE_STATIC_IMMUTABLE(str_t) s_default_string; return &s_default_string; }
 	};
+
+	template <class... _Args>
+	auto make_xscope_any_string_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_string_const_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TXScopeAnyStringConstSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_xscope_string_const_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_string_const_section)
 
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	class TAnyStringConstSection : public TStringConstSection<TAnyRandomAccessConstIterator<_Ty>, _Traits> {
 	public:
 		typedef TStringConstSection<TAnyRandomAccessConstIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_RANDOM_ACCESS_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		MSE_USING(TAnyStringConstSection, base_class);
-		TAnyStringConstSection() : base_class(&s_default_string_ref()) {}
+		TAnyStringConstSection() : base_class(s_default_string_siptr()) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
-		static auto& s_default_string_ref() { static /*const*/ mse::nii_basic_string<nonconst_value_type, _Traits> s_default_string; return s_default_string; }
+		static auto s_default_string_siptr() { typedef mse::nii_basic_string<nonconst_value_type, _Traits> str_t; MSE_DECLARE_STATIC_IMMUTABLE(str_t) s_default_string; return &s_default_string; }
 	};
+
+	template <class... _Args>
+	auto make_any_string_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_string_const_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TAnyStringConstSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_string_const_section(std::forward<_Args>(_Ax)...));
+	}
 
 	namespace rsv {
 		template<typename _Ty>
@@ -1478,9 +1693,9 @@ namespace mse {
 			TFParam(_TRALoneParam&& src) : base_class(constructor_helper1(
 #ifndef MSE_SCOPEPOINTER_DISABLED
 				typename std::conditional<
-				mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::value
+				mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedItemFixedConstPointerToRValue>::value
 				|| std::is_base_of<mse::us::impl::CagedStringSectionTagBase, _TRALoneParam>::value
-				//|| mse::impl::is_instantiation_of_msescope<_TRALoneParam, mse::TXScopeCagedStringConstSectionToRValue>::value
+				//|| mse::impl::is_instantiation_of<_TRALoneParam, mse::TXScopeCagedStringConstSectionToRValue>::value
 				, std::true_type, std::false_type>::type()
 #else //!MSE_SCOPEPOINTER_DISABLED
 				std::false_type()
@@ -1511,8 +1726,10 @@ namespace mse {
 
 	namespace impl {
 		template<typename _Ty, typename _TRALoneParam, class = typename std::enable_if<
-			(!std::is_same<std::basic_string<_Ty>, typename std::remove_const<_TRALoneParam>::type>::value), void>::type>
-			void T_valid_if_not_an_std_basic_string_msepoly() {}
+			(!std::is_same<std::basic_string<_Ty>, typename std::remove_const<_TRALoneParam>::type>::value)
+			&& (!std::is_same<mse::TXScopeObj<std::basic_string<_Ty> >, typename std::remove_const<_TRALoneParam>::type>::value)
+			, void>::type>
+		void T_valid_if_not_an_std_basic_string_msepoly() {}
 
 		template<typename _Ty, typename _TPtr>
 		void T_valid_if_not_a_pointer_to_an_std_basic_string_msepoly_helper(std::true_type) {
@@ -1528,12 +1745,12 @@ namespace mse {
 
 		template<typename _Ty, typename _TRALoneParam>
 		void T_valid_if_not_an_unsupported_NRPStringSection_lone_parameter_msepoly() {
-#if !defined(MSE_SCOPEPOINTER_DISABLED) && !defined(MSE_REGISTEREDPOINTER_DISABLED) && !defined(MSE_NORADPOINTER_DISABLED)
+#if !defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)
 			mse::impl::T_valid_if_not_a_native_pointer_msemsestring<_TRALoneParam>();
-#endif /*!defined(MSE_SCOPEPOINTER_DISABLED) && !defined(MSE_REGISTEREDPOINTER_DISABLED) && !defined(MSE_NORADPOINTER_DISABLED)*/
+#endif /*!defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)*/
 #ifndef MSE_MSTDSTRING_DISABLED
 			T_valid_if_not_an_std_basic_string_msepoly<_Ty, _TRALoneParam>();
-			//T_valid_if_not_a_pointer_to_an_std_basic_string_msepoly<_Ty, _TRALoneParam>();
+			T_valid_if_not_a_pointer_to_an_std_basic_string_msepoly<_Ty, _TRALoneParam>();
 #endif /*!MSE_MSTDSTRING_DISABLED*/
 		}
 	}
@@ -1542,46 +1759,43 @@ namespace mse {
 	class TXScopeAnyNRPStringSection : public TXScopeNRPStringSection<TXScopeAnyRandomAccessIterator<_Ty>, _Traits> {
 	public:
 		typedef TXScopeNRPStringSection<TXScopeAnyRandomAccessIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::reference reference;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		//MSE_USING(TXScopeAnyNRPStringSection, base_class);
 		TXScopeAnyNRPStringSection(const TXScopeAnyNRPStringSection& src) : base_class(static_cast<const base_class&>(src)) {}
 		TXScopeAnyNRPStringSection(const base_class& src) : base_class(src) {}
 		template <typename _TRAIterator>
 		TXScopeAnyNRPStringSection(const _TRAIterator& start_iter, size_type count) : base_class(start_iter, count) {
-#ifndef MSE_SAFERPTR_DISABLED
+#if !defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)
 			/* Note: Use TXScopeAnyNRPStringConstSection instead if referencing a string literal. */
 			mse::impl::T_valid_if_not_a_native_pointer_msemsestring<_TRAIterator>();
+#endif /*!defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)*/
+#ifndef MSE_MSTDSTRING_DISABLED
 			mse::impl::T_valid_if_not_an_std_basic_string_iterator_msemsestring<_TRAIterator>();
-#endif //!MSE_SAFERPTR_DISABLED
+			mse::impl::T_valid_if_not_an_std_basic_string_xscope_iterator_msemsestring<_TRAIterator>();
+#endif /*!MSE_MSTDSTRING_DISABLED*/
 		}
 		template <typename _TRALoneParam>
 		TXScopeAnyNRPStringSection(const _TRALoneParam& param) : base_class(param) {
-#ifndef MSE_SAFERPTR_DISABLED
 			impl::T_valid_if_not_an_unsupported_NRPStringSection_lone_parameter_msepoly<_Ty, _TRALoneParam>();
-#endif //!MSE_SAFERPTR_DISABLED
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_xscope_any_nrp_string_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_nrp_string_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TXScopeAnyNRPStringSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_xscope_nrp_string_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_nrp_string_section)
 
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	class TAnyNRPStringSection : public TNRPStringSection<TAnyRandomAccessIterator<_Ty>, _Traits> {
 	public:
 		typedef TNRPStringSection<TAnyRandomAccessIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::reference reference;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		//MSE_USING(TAnyNRPStringSection, base_class);
 		TAnyNRPStringSection(const TAnyNRPStringSection& src) : base_class(static_cast<const base_class&>(src)) {}
@@ -1597,42 +1811,45 @@ namespace mse {
 			impl::T_valid_if_not_an_unsupported_NRPStringSection_lone_parameter_msepoly<_Ty, _TRALoneParam>();
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
+
+	template <class... _Args>
+	auto make_any_nrp_string_section(_Args&& ... _Ax) {
+		typedef decltype(make_nrp_string_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TAnyNRPStringSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_nrp_string_section(std::forward<_Args>(_Ax)...));
+	}
 
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	class TXScopeAnyNRPStringConstSection : public TXScopeNRPStringConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>, _Traits> {
 	public:
 		typedef TXScopeNRPStringConstSection<TXScopeAnyRandomAccessConstIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		//MSE_USING(TXScopeAnyNRPStringConstSection, base_class);
 		TXScopeAnyNRPStringConstSection(const TXScopeAnyNRPStringConstSection& src) : base_class(static_cast<const base_class&>(src)) {}
 		TXScopeAnyNRPStringConstSection(const base_class& src) : base_class(src) {}
 		template <typename _TRAIterator>
 		TXScopeAnyNRPStringConstSection(const _TRAIterator& start_iter, size_type count) : base_class(start_iter, count) {
-#ifndef MSE_SAFERPTR_DISABLED
+#if !defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)
+			/* Note: Use TXScopeAnyNRPStringConstSection instead if referencing a string literal. */
 			mse::impl::T_valid_if_not_a_native_pointer_msemsestring<_TRAIterator>();
+			mse::impl::T_valid_if_not_an_std_basic_string_xscope_iterator_msemsestring<_TRAIterator>();
+#endif /*!defined(MSE_SOME_POINTER_TYPE_IS_DISABLED)*/
+#ifndef MSE_MSTDSTRING_DISABLED
 			mse::impl::T_valid_if_not_an_std_basic_string_iterator_msemsestring<_TRAIterator>();
-#endif //!MSE_SAFERPTR_DISABLED
+#endif /*!MSE_MSTDSTRING_DISABLED*/
 		}
 		template <typename _TRALoneParam>
 		TXScopeAnyNRPStringConstSection(const _TRALoneParam& param) : base_class(param) {
-#ifndef MSE_SAFERPTR_DISABLED
 			impl::T_valid_if_not_an_unsupported_NRPStringSection_lone_parameter_msepoly<_Ty, _TRALoneParam>();
-#endif //!MSE_SAFERPTR_DISABLED
 		}
-		TXScopeAnyNRPStringConstSection() : base_class(&s_default_string_ref()) {}
+		TXScopeAnyNRPStringConstSection() : base_class(s_default_string_siptr()) {}
 
 		template<size_t Tn, typename = typename std::enable_if<1 <= Tn>::type>
 		explicit TXScopeAnyNRPStringConstSection(const value_type(&presumed_string_literal)[Tn]) : base_class(presumed_string_literal) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		/* Construction from a const native array is publicly supported (only) because string literals are const
@@ -1640,19 +1857,22 @@ namespace mse {
 		template<size_t Tn>
 		explicit TXScopeAnyNRPStringConstSection(typename std::remove_const<value_type>::type(&native_array)[Tn]) : base_class(native_array) {}
 
-		static auto& s_default_string_ref() { static /*const*/ mse::nii_basic_string<nonconst_value_type, _Traits> s_default_string; return s_default_string; }
+		static auto s_default_string_siptr() { typedef mse::nii_basic_string<nonconst_value_type, _Traits> str_t; MSE_DECLARE_STATIC_IMMUTABLE(str_t) s_default_string; return &s_default_string; }
 	};
+
+	template <class... _Args>
+	auto make_xscope_any_nrp_string_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_xscope_nrp_string_const_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TXScopeAnyNRPStringConstSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_xscope_nrp_string_const_section(std::forward<_Args>(_Ax)...));
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_any_nrp_string_const_section)
 
 	template <typename _Ty = char, class _Traits = std::char_traits<_Ty> >
 	class TAnyNRPStringConstSection : public TNRPStringConstSection<TAnyRandomAccessConstIterator<_Ty>, _Traits> {
 	public:
 		typedef TNRPStringConstSection<TAnyRandomAccessConstIterator<_Ty>, _Traits> base_class;
-		typedef typename base_class::value_type value_type;
-		typedef typename base_class::const_reference const_reference;
-		typedef typename base_class::size_type size_type;
-		typedef typename base_class::difference_type difference_type;
-		static const size_t npos = size_t(-1);
-		typedef typename std::remove_const<value_type>::type nonconst_value_type;
+		MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 		//MSE_USING(TAnyNRPStringConstSection, base_class);
 		TAnyNRPStringConstSection(const TAnyNRPStringConstSection& src) : base_class(static_cast<const base_class&>(src)) {}
@@ -1666,12 +1886,12 @@ namespace mse {
 		TAnyNRPStringConstSection(const _TRALoneParam& param) : base_class(param) {
 			impl::T_valid_if_not_an_unsupported_NRPStringSection_lone_parameter_msepoly<_Ty, _TRALoneParam>();
 		}
-		TAnyNRPStringConstSection() : base_class(&s_default_string_ref()) {}
+		TAnyNRPStringConstSection() : base_class(s_default_string_siptr()) {}
 
 		template<size_t Tn, typename = typename std::enable_if<1 <= Tn>::type>
 		explicit TAnyNRPStringConstSection(const value_type(&presumed_string_literal)[Tn]) : base_class(presumed_string_literal) {}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		/* Construction from a const native array is publicly supported (only) because string literals are const
@@ -1679,8 +1899,14 @@ namespace mse {
 		template<size_t Tn>
 		explicit TAnyNRPStringConstSection(typename std::remove_const<value_type>::type(&native_array)[Tn]) : base_class(native_array) {}
 
-		static auto& s_default_string_ref() { static /*const*/ mse::nii_basic_string<nonconst_value_type, _Traits> s_default_string; return s_default_string; }
+		static auto s_default_string_siptr() { typedef mse::nii_basic_string<nonconst_value_type, _Traits> str_t; MSE_DECLARE_STATIC_IMMUTABLE(str_t) s_default_string; return &s_default_string; }
 	};
+
+	template <class... _Args>
+	auto make_any_nrp_string_const_section(_Args&& ... _Ax) {
+		typedef decltype(make_nrp_string_const_section(std::forward<_Args>(_Ax)...)) str_section_t;
+		return TAnyNRPStringConstSection<typename str_section_t::value_type, typename str_section_t::traits_type>(make_nrp_string_const_section(std::forward<_Args>(_Ax)...));
+	}
 }
 
 namespace std {
@@ -1721,11 +1947,7 @@ namespace mse {
 		class basic_string_view : public TAnyStringConstSection<_Ty, _Traits> {
 		public:
 			typedef TAnyStringConstSection<_Ty, _Traits> base_class;
-			typedef typename base_class::value_type value_type;
-			typedef typename base_class::const_reference const_reference;
-			typedef typename base_class::size_type size_type;
-			typedef typename base_class::difference_type difference_type;
-			static const size_t npos = size_t(-1);
+			MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 			MSE_USING(basic_string_view, base_class);
 			explicit basic_string_view(const char* sz) : base_class(sz, _Traits::length(sz)) {}
@@ -1735,11 +1957,7 @@ namespace mse {
 		class xscope_basic_string_view : public TXScopeAnyStringConstSection<_Ty, _Traits> {
 		public:
 			typedef TXScopeAnyStringConstSection<_Ty, _Traits> base_class;
-			typedef typename base_class::value_type value_type;
-			typedef typename base_class::const_reference const_reference;
-			typedef typename base_class::size_type size_type;
-			typedef typename base_class::difference_type difference_type;
-			static const size_t npos = size_t(-1);
+			MSE_INHERITED_STRING_SECTION_MEMBER_TYPE_AND_NPOS_DECLARATIONS(base_class);
 
 			MSE_USING(xscope_basic_string_view, base_class);
 			explicit xscope_basic_string_view(const char* sz) : base_class(sz, _Traits::length(sz)) {}
@@ -1753,6 +1971,13 @@ namespace mse {
 		typedef xscope_basic_string_view<char16_t> xscope_u16string_view;
 		typedef xscope_basic_string_view<char32_t> xscope_u32string_view;
 		typedef xscope_basic_string_view<wchar_t>  xscope_wstring_view;
+
+		template <class... _Args>
+		auto make_xscope_string_view(_Args&& ... _Ax) {
+			return xscope_string_view(make_xscope_string_const_section(std::forward<_Args>(_Ax)...));
+		}
+		/* Overloads for rsv::TReturnableFParam<>. */
+		MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_string_view)
 	}
 
 	template <typename _Ty, class _Traits = std::char_traits<_Ty> >
@@ -1770,6 +1995,13 @@ namespace mse {
 	typedef xscope_nrp_basic_string_view<char32_t> xscope_nrp_u32string_view;
 	typedef xscope_nrp_basic_string_view<wchar_t>  xscope_nrp_wstring_view;
 
+	template <class... _Args>
+	auto make_xscope_nrp_string_view(_Args&& ... _Ax) {
+		return xscope_nrp_string_view(std::forward<_Args>(_Ax)...);
+	}
+	/* Overloads for rsv::TReturnableFParam<>. */
+	MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_nrp_string_view)
+
 
 	template <typename _Ty>
 	class TNullableAnyRandomAccessIterator : public TAnyRandomAccessIterator<_Ty> {
@@ -1785,9 +2017,10 @@ namespace mse {
 			&& (!std::is_base_of<TAnyRandomAccessIterator<_Ty>, _TRandomAccessIterator1>::value)
 			&& (!std::is_convertible<_TRandomAccessIterator1, std::nullptr_t>::value)
 			&& (!std::is_convertible<_TRandomAccessIterator1, int>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TRandomAccessIterator1>::value)
 			, void>::type>
-			TNullableAnyRandomAccessIterator(const _TRandomAccessIterator1& random_access_iterator) : TAnyRandomAccessIterator<_Ty>(random_access_iterator) {}
+		TNullableAnyRandomAccessIterator(const _TRandomAccessIterator1& random_access_iterator) : TAnyRandomAccessIterator<_Ty>(random_access_iterator) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TRandomAccessIterator1>();
+		}
 
 		friend void swap(TNullableAnyRandomAccessIterator& first, TNullableAnyRandomAccessIterator& second) {
 			std::swap(static_cast<TAnyRandomAccessIterator<_Ty>&>(first), static_cast<TAnyRandomAccessIterator<_Ty>&>(second));
@@ -1807,7 +2040,7 @@ namespace mse {
 			return (!m_is_null);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
@@ -1832,9 +2065,10 @@ namespace mse {
 			&& (!std::is_base_of<base_class, _TRandomAccessIterator1>::value)
 			&& (!std::is_convertible<_TRandomAccessIterator1, std::nullptr_t>::value)
 			&& (!std::is_convertible<_TRandomAccessIterator1, int>::value)
-			&& (!std::is_base_of<mse::us::impl::XScopeTagBase, _TRandomAccessIterator1>::value)
 			, void>::type>
-			TNullableAnyPointer(const _TRandomAccessIterator1& random_access_iterator) : base_class(random_access_iterator) {}
+		TNullableAnyPointer(const _TRandomAccessIterator1& random_access_iterator) : base_class(random_access_iterator) {
+			mse::impl::T_valid_if_not_an_xscope_type<_TRandomAccessIterator1>();
+		}
 
 		friend void swap(TNullableAnyPointer& first, TNullableAnyPointer& second) {
 			std::swap(static_cast<base_class&>(first), static_cast<base_class&>(second));
@@ -1854,7 +2088,7 @@ namespace mse {
 			return (!m_is_null);
 		}
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		MSE_DEFAULT_OPERATOR_AMPERSAND_DECLARATION;
@@ -1888,23 +2122,23 @@ namespace mse {
 
 
 	/* Deprecated poly pointers. */
-	template<typename _Ty> class TRefCountingOrXScopeFixedConstPointer;
+	template<typename _Ty> class MSE_DEPRECATED TRefCountingOrXScopeFixedConstPointer;
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TRefCountingOrXScopeFixedPointer : public TXScopePolyPointer<_Ty> {
+	class MSE_DEPRECATED TRefCountingOrXScopeFixedPointer : public TXScopePolyPointer<_Ty> {
 	public:
 		TRefCountingOrXScopeFixedPointer(const TRefCountingOrXScopeFixedPointer& src_cref) : TXScopePolyPointer<_Ty>(src_cref) {}
 		TRefCountingOrXScopeFixedPointer(const TRefCountingPointer<_Ty>& src_cref) : TXScopePolyPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TRefCountingOrXScopeFixedPointer(const TRefCountingPointer<_Ty2>& src_cref) : TXScopePolyPointer<_Ty>(TRefCountingPointer<_Ty>(src_cref)) {}
 		TRefCountingOrXScopeFixedPointer(const TXScopeFixedPointer<_Ty>& src_cref) : TXScopePolyPointer<_Ty>(src_cref) {}
-		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
-		TRefCountingOrXScopeFixedPointer(const TXScopeFixedPointer<_Ty2>& src_cref) : TXScopePolyPointer<_Ty>(TXScopeFixedPointer<_Ty>(src_cref)) {}
-		virtual ~TRefCountingOrXScopeFixedPointer() {}
+		//template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		//TRefCountingOrXScopeFixedPointer(const TXScopeFixedPointer<_Ty2>& src_cref) : TXScopePolyPointer<_Ty>(TXScopeFixedPointer<_Ty>(src_cref)) {}
+		MSE_IMPL_DESTRUCTOR_PREFIX1 ~TRefCountingOrXScopeFixedPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator _Ty*() const { return std::addressof((*this).operator*()); }
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 #ifndef MSE_SCOPEPOINTER_DISABLED
 	protected:
@@ -1919,7 +2153,7 @@ namespace mse {
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TRefCountingOrXScopeFixedConstPointer : public TXScopePolyConstPointer<_Ty> {
+	class MSE_DEPRECATED TRefCountingOrXScopeFixedConstPointer : public TXScopePolyConstPointer<_Ty> {
 	public:
 		TRefCountingOrXScopeFixedConstPointer(const TRefCountingOrXScopeFixedConstPointer& src_cref) : TXScopePolyConstPointer<_Ty>(src_cref) {}
 		TRefCountingOrXScopeFixedConstPointer(const TRefCountingOrXScopeFixedPointer<_Ty>& src_cref) : TXScopePolyConstPointer<_Ty>(src_cref) {}
@@ -1935,12 +2169,12 @@ namespace mse {
 #ifndef MSE_SCOPEPOINTER_DISABLED
 		TRefCountingOrXScopeFixedConstPointer(const TXScopeFixedPointer<_Ty>& src_cref) : TXScopePolyConstPointer<_Ty>(src_cref) {}
 #endif // !MSE_SCOPEPOINTER_DISABLED
-		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
-		TRefCountingOrXScopeFixedConstPointer(const TXScopeFixedPointer<_Ty2>& src_cref) : TXScopePolyConstPointer<_Ty>(TXScopeFixedPointer<_Ty>(src_cref)) {}
-		virtual ~TRefCountingOrXScopeFixedConstPointer() {}
+		//template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
+		//TRefCountingOrXScopeFixedConstPointer(const TXScopeFixedPointer<_Ty2>& src_cref) : TXScopePolyConstPointer<_Ty>(TXScopeFixedPointer<_Ty>(src_cref)) {}
+		MSE_IMPL_DESTRUCTOR_PREFIX1 ~TRefCountingOrXScopeFixedConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return std::addressof((*this).operator*()); }
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 #ifndef MSE_SCOPEPOINTER_DISABLED
 	protected:
@@ -1953,39 +2187,39 @@ namespace mse {
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TRefCountingOrXScopeOrRawFixedPointer : public TRefCountingOrXScopeFixedPointer<_Ty> {
+	class MSE_DEPRECATED TRefCountingOrXScopeOrRawFixedPointer : public TRefCountingOrXScopeFixedPointer<_Ty> {
 	public:
 		MSE_SCOPE_USING(TRefCountingOrXScopeOrRawFixedPointer, TRefCountingOrXScopeFixedPointer<_Ty>);
 		TRefCountingOrXScopeOrRawFixedPointer(_Ty* ptr) : TRefCountingOrXScopeFixedPointer<_Ty>(ptr) {}
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TRefCountingOrXScopeOrRawFixedConstPointer : public TRefCountingOrXScopeFixedConstPointer<_Ty> {
+	class MSE_DEPRECATED TRefCountingOrXScopeOrRawFixedConstPointer : public TRefCountingOrXScopeFixedConstPointer<_Ty> {
 	public:
 		MSE_SCOPE_USING(TRefCountingOrXScopeOrRawFixedConstPointer, TRefCountingOrXScopeFixedConstPointer<_Ty>);
 		TRefCountingOrXScopeOrRawFixedConstPointer(_Ty* ptr) : TRefCountingOrXScopeFixedConstPointer<_Ty>(ptr) {}
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 	};
 
 
 	/* deprecated*/
-	template<typename _Ty> class TSharedOrRawFixedConstPointer;
+	template<typename _Ty> class MSE_DEPRECATED TSharedOrRawFixedConstPointer;
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TSharedOrRawFixedPointer : public TPolyPointer<_Ty> {
+	class MSE_DEPRECATED TSharedOrRawFixedPointer : public TPolyPointer<_Ty> {
 	public:
 		TSharedOrRawFixedPointer(const TSharedOrRawFixedPointer& src_cref) : TPolyPointer<_Ty>(src_cref) {}
 		TSharedOrRawFixedPointer(const std::shared_ptr<_Ty>& src_cref) : TPolyPointer<_Ty>(src_cref) {}
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TSharedOrRawFixedPointer(const std::shared_ptr<_Ty2>& src_cref) : TPolyPointer<_Ty>(src_cref) {}
 		TSharedOrRawFixedPointer(_Ty* ptr) : TPolyPointer<_Ty>(ptr) {}
-		virtual ~TSharedOrRawFixedPointer() {}
+		MSE_IMPL_DESTRUCTOR_PREFIX1 ~TSharedOrRawFixedPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator _Ty*() const { return std::addressof((*this).operator*()); }
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		TSharedOrRawFixedPointer<_Ty>& operator=(const TSharedOrRawFixedPointer<_Ty>& _Right_cref) = delete;
@@ -1996,7 +2230,7 @@ namespace mse {
 
 	/* deprecated*/
 	template<typename _Ty>
-	class TSharedOrRawFixedConstPointer : public TPolyConstPointer<_Ty> {
+	class MSE_DEPRECATED TSharedOrRawFixedConstPointer : public TPolyConstPointer<_Ty> {
 	public:
 		TSharedOrRawFixedConstPointer(const TSharedOrRawFixedConstPointer& src_cref) : TPolyConstPointer<_Ty>(src_cref) {}
 		TSharedOrRawFixedConstPointer(const TSharedOrRawFixedPointer<_Ty>& src_cref) : TPolyConstPointer<_Ty>(src_cref) {}
@@ -2007,10 +2241,10 @@ namespace mse {
 		template<class _Ty2, class = typename std::enable_if<std::is_convertible<_Ty2 *, _Ty *>::value, void>::type>
 		TSharedOrRawFixedConstPointer(const std::shared_ptr<_Ty2>& src_cref) : TStrongFixedConstPointer<_Ty, std::shared_ptr<_Ty>>(src_cref) {}
 		TSharedOrRawFixedConstPointer(_Ty* ptr) : TPolyConstPointer<_Ty>(ptr) {}
-		virtual ~TSharedOrRawFixedConstPointer() {}
+		MSE_IMPL_DESTRUCTOR_PREFIX1 ~TSharedOrRawFixedConstPointer() {}
 		/* This native pointer cast operator is just for compatibility with existing/legacy code and ideally should never be used. */
 		explicit operator const _Ty*() const { return std::addressof((*this).operator*()); }
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		TSharedOrRawFixedConstPointer<_Ty>& operator=(const TSharedOrRawFixedConstPointer<_Ty>& _Right_cref) = delete;
@@ -2062,6 +2296,7 @@ namespace mse {
 							return retval;
 						}
 
+#ifdef MSE_POLY_SELF_TEST_DEPRECATED_POLY_POINTERS
 						/* Deprecated poly pointers */
 						static int foo3(mse::TRefCountingOrXScopeOrRawFixedPointer<A> ptr) {
 							int retval = ptr->b;
@@ -2087,6 +2322,8 @@ namespace mse {
 							int retval = ptr->b;
 							return retval;
 						}
+#endif // MSE_POLY_SELF_TEST_DEPRECATED_POLY_POINTERS
+
 					protected:
 						~B() {}
 					};
@@ -2146,11 +2383,12 @@ namespace mse {
 						mse::TXScopeObj<D> d_xscpobj(7);
 						D d_obj(11);
 						int res11 = B::foo1(D_refcfp);
-						int res12 = B::foo1(&d_xscpobj);
+						int res12 = B::foo1(mse::TXScopeItemFixedPointer<D>(&d_xscpobj));
 						int res13 = B::foo2(D_refcfp);
-						int res14 = B::foo2(&d_xscpobj);
+						int res14 = B::foo2(mse::TXScopeItemFixedPointer<D>(&d_xscpobj));
 					}
 
+#ifdef MSE_POLY_SELF_TEST_DEPRECATED_POLY_POINTERS
 					{
 						/* Testing the deprecated poly pointers */
 						auto A_refcfp = mse::make_refcounting<A>(5);
@@ -2165,9 +2403,7 @@ namespace mse {
 						mse::TXScopeObj<D> d_xscpobj(7);
 						D d_obj(11);
 						int res11 = B::foo7(D_refcfp);
-						int res12 = B::foo7(&d_xscpobj);
 						int res13 = B::foo8(D_refcfp);
-						int res14 = B::foo8(&d_xscpobj);
 
 						int res21 = B::foo3(A_refcfp);
 						int res22 = B::foo3(&a_xscpobj);
@@ -2177,10 +2413,8 @@ namespace mse {
 						int res26 = B::foo4(&a_obj);
 
 						int res31 = B::foo3(D_refcfp);
-						int res32 = B::foo3(&d_xscpobj);
 						int res33 = B::foo3(&d_obj);
 						int res34 = B::foo4(D_refcfp);
-						int res35 = B::foo4(&d_xscpobj);
 						int res36 = B::foo4(&d_obj);
 
 						auto A_shp = std::make_shared<A>(5);
@@ -2189,6 +2423,7 @@ namespace mse {
 						int res43 = B::foo6(A_shp);
 						int res44 = B::foo6(&a_obj);
 					}
+#endif // MSE_POLY_SELF_TEST_DEPRECATED_POLY_POINTERS
 
 					{
 						/* Just exercising the tdp_variant type. */
@@ -2254,8 +2489,20 @@ namespace mse {
 
 }
 
+#ifdef __clang__
+#pragma clang diagnostic pop // -Wdeprecated-declarations
+#else /*__clang__*/
+#ifdef __GNUC__
+#pragma GCC diagnostic pop // -Wdeprecated-declarations
+#endif /*__GNUC__*/
+#endif /*__clang__*/
+
 #ifdef _MSC_VER
 #pragma warning( pop )  
 #endif /*_MSC_VER*/
+
+#ifndef MSE_PUSH_MACRO_NOT_SUPPORTED
+#pragma pop_macro("MSE_THROW")
+#endif // !MSE_PUSH_MACRO_NOT_SUPPORTED
 
 #endif // MSEPOLY_H_

@@ -10,11 +10,27 @@
 
 #include "msemsevector.h"
 
-namespace mse {
+#ifndef MSE_PUSH_MACRO_NOT_SUPPORTED
+#pragma push_macro("MSE_THROW")
+#pragma push_macro("_NOEXCEPT")
+#pragma push_macro("_NOEXCEPT_OP")
+#endif // !MSE_PUSH_MACRO_NOT_SUPPORTED
+
+#ifdef MSE_CUSTOM_THROW_DEFINITION
+#define MSE_THROW(x) MSE_CUSTOM_THROW_DEFINITION(x)
+#else // MSE_CUSTOM_THROW_DEFINITION
+#define MSE_THROW(x) throw(x)
+#endif // MSE_CUSTOM_THROW_DEFINITION
 
 #ifndef _NOEXCEPT
 #define _NOEXCEPT
 #endif /*_NOEXCEPT*/
+
+#ifndef _NOEXCEPT_OP
+#define _NOEXCEPT_OP(x)	noexcept(x)
+#endif /*_NOEXCEPT_OP*/
+
+namespace mse {
 
 	class ivector_range_error : public std::range_error {
 	public:
@@ -46,7 +62,7 @@ namespace mse {
 		explicit ivector(size_type _N, const _Ty& _V, const _A& _Al = _A()) : m_shptr(std::make_shared<_MV>(_N, _V, _Al)) {}
 		ivector(_MV&& _X) : m_shptr(std::make_shared<_MV>(std::forward<decltype(_X)>(_X))) {}
 		ivector(const _MV& _X) : m_shptr(std::make_shared<_MV>(_X)) {}
-		ivector(_Myt&& _X) : m_shptr(std::make_shared<_MV>(std::forward<decltype(_X.msevector())>(_X.msevector()))) {}
+		ivector(_Myt&& _X) : m_shptr(std::make_shared<_MV>(std::forward<decltype(_X)>(_X).msevector())) {}
 		ivector(const _Myt& _X) : m_shptr(std::make_shared<_MV>(_X.msevector())) {}
 		typedef typename _MV::const_iterator _It;
 		ivector(_It _F, _It _L, const _A& _Al = _A()) : m_shptr(std::make_shared<_MV>(_F, _L, _Al)) {}
@@ -58,7 +74,7 @@ namespace mse {
 
 		_Myt& operator=(_MV&& _X) { m_shptr->operator=(std::forward<decltype(_X)>(_X)); return (*this); }
 		_Myt& operator=(const _MV& _X) { m_shptr->operator=(_X); return (*this); }
-		_Myt& operator=(_Myt&& _X) { m_shptr->operator=(std::forward<decltype(_X.msevector())>(_X.msevector())); return (*this); }
+		_Myt& operator=(_Myt&& _X) { m_shptr->operator=(std::forward<decltype(_X)>(_X).msevector()); return (*this); }
 		_Myt& operator=(const _Myt& _X) { m_shptr->operator=(_X.msevector()); return (*this); }
 		void reserve(size_type _Count) { m_shptr->reserve(_Count); }
 		void resize(size_type _N, const _Ty& _X = _Ty()) { m_shptr->resize(_N, _X); }
@@ -97,7 +113,7 @@ namespace mse {
 		class xscope_cipointer;
 		class xscope_ipointer;
 
-		class cipointer : public _MV::random_access_const_iterator_base, public mse::us::impl::NotAsyncShareableTagBase {
+		class cipointer : public _MV::random_access_const_iterator_base, public mse::us::impl::AsyncNotShareableAndNotPassableTagBase {
 		public:
 			typedef typename _MV::mm_const_iterator_type::iterator_category iterator_category;
 			typedef typename _MV::mm_const_iterator_type::value_type value_type;
@@ -154,7 +170,7 @@ namespace mse {
 			auto target_container_ptr() const -> decltype(msevector_cipointer().target_container_ptr()) {
 				return msevector_cipointer().target_container_ptr();
 			}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+			void async_not_shareable_and_not_passable_tag() const {}
 		private:
 			cipointer(const std::shared_ptr<_MV>& msevector_shptr) : m_msevector_cshptr(msevector_shptr), m_cipointer(*msevector_shptr) {}
 			std::shared_ptr<const _MV> m_msevector_cshptr;
@@ -226,7 +242,7 @@ namespace mse {
 			auto target_container_ptr() const -> decltype(msevector_ipointer().target_container_ptr()) {
 				return msevector_ipointer().target_container_ptr();
 			}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+			void async_not_shareable_and_not_passable_tag() const {}
 			msev_size_t position() const { return msevector_ipointer().position(); }
 		private:
 			std::shared_ptr<_MV> m_msevector_shptr;
@@ -447,7 +463,7 @@ namespace mse {
 			}
 			void xscope_tag() const {}
 			void xscope_ipointer_tag() const {}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+			void async_not_shareable_and_not_passable_tag() const {}
 		private:
 			typename _MV::xscope_cipointer m_xscope_cipointer;
 			friend class /*_Myt*/ivector<_Ty>;
@@ -535,69 +551,59 @@ namespace mse {
 			}
 			void xscope_tag() const {}
 			void xscope_ipointer_tag() const {}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+			void async_not_shareable_and_not_passable_tag() const {}
 		private:
 			typename _MV::xscope_ipointer m_xscope_ipointer;
 			friend class /*_Myt*/ivector<_Ty>;
 			friend class xscope_cipointer;
 		};
 
-		/* For each (scope) vector instance, only one instance of xscope_structure_change_lock_guard may exist at any one
-		time. While an instance of xscope_structure_change_lock_guard exists it ensures that direct (scope) pointers to
+		/* For each (scope) vector instance, only one instance of xscope_structure_lock_guard may exist at any one
+		time. While an instance of xscope_structure_lock_guard exists it ensures that direct (scope) pointers to
 		individual elements in the vector do not become invalid by preventing any operation that might resize the vector
 		or increase its capacity. Any attempt to execute such an operation would result in an exception. */
-		class xscope_structure_change_lock_guard : public mse::us::impl::XScopeTagBase {
+		class xscope_structure_lock_guard : public mse::us::impl::Txscope_structure_lock_guard_of_wrapper<ivector, typename mse::us::msevector<_Ty>::xscope_structure_lock_guard> {
 		public:
-			xscope_structure_change_lock_guard(const mse::TXScopeFixedPointer<ivector>& owner_ptr)
-				: m_MV_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
-#if !defined(MSE_SCOPEPOINTER_DISABLED)
-			xscope_structure_change_lock_guard(const mse::TXScopeItemFixedPointer<ivector>& owner_ptr)
-				: m_MV_xscope_structure_change_lock_guard(mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
-#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
+			typedef mse::us::impl::Txscope_structure_lock_guard_of_wrapper<ivector, typename mse::us::msevector<_Ty>::xscope_structure_lock_guard> base_class;
 
-			auto xscope_ptr_to_element(size_type _P) const {
-				return m_MV_xscope_structure_change_lock_guard.xscope_ptr_to_element(_P);
-			}
-			auto xscope_ptr_to_element(const xscope_ipointer& iter) const {
-				assert(std::addressof(*(iter.target_container_ptr())) == std::addressof(*target_container_ptr()));
-				return xscope_ptr_to_element(iter.position());
-			}
-			auto target_container_ptr() const {
-				return m_MV_xscope_structure_change_lock_guard.target_container_ptr();
-			}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
-		private:
-			typename mse::us::msevector<_Ty>::xscope_structure_change_lock_guard m_MV_xscope_structure_change_lock_guard;
+			xscope_structure_lock_guard(const xscope_structure_lock_guard&) = default;
+			xscope_structure_lock_guard(xscope_structure_lock_guard&&) = default;
+
+			xscope_structure_lock_guard(const mse::TXScopeFixedPointer<ivector>& owner_ptr)
+				: base_class(owner_ptr, mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+#if !defined(MSE_SCOPEPOINTER_DISABLED)
+			xscope_structure_lock_guard(const mse::TXScopeItemFixedPointer<ivector>& owner_ptr)
+				: base_class(owner_ptr, mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 		};
-		class xscope_const_structure_change_lock_guard : public mse::us::impl::XScopeTagBase {
+		class xscope_const_structure_lock_guard : public mse::us::impl::Txscope_const_structure_lock_guard_of_wrapper<ivector, typename mse::us::msevector<_Ty>::xscope_const_structure_lock_guard> {
 		public:
-			xscope_const_structure_change_lock_guard(const mse::TXScopeFixedConstPointer<ivector>& owner_ptr)
-				: m_MV_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(*((*owner_ptr).m_shptr))) {}
-#if !defined(MSE_SCOPEPOINTER_DISABLED)
-			xscope_const_structure_change_lock_guard(const mse::TXScopeItemFixedConstPointer<ivector>& owner_ptr)
-				: m_MV_xscope_const_structure_change_lock_guard(mse::us::unsafe_make_xscope_const_pointer_to(*((*owner_ptr).m_shptr))) {}
-#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
+			typedef mse::us::impl::Txscope_structure_lock_guard_of_wrapper<ivector, typename mse::us::msevector<_Ty>::xscope_structure_lock_guard> base_class;
 
-			auto xscope_ptr_to_element(size_type _P) const {
-				return m_MV_xscope_const_structure_change_lock_guard.xscope_ptr_to_element(_P);
-			}
-			auto xscope_ptr_to_element(const xscope_cipointer& citer) const {
-				assert(std::addressof(*(citer.target_container_ptr())) == std::addressof(*target_container_ptr()));
-				return xscope_ptr_to_element(citer.position());
-			}
-			auto target_container_ptr() const {
-				return m_MV_xscope_const_structure_change_lock_guard.target_container_ptr();
-			}
-			void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
-		private:
-			typename mse::us::msevector<_Ty>::xscope_const_structure_change_lock_guard m_MV_xscope_const_structure_change_lock_guard;
+			xscope_const_structure_lock_guard(const xscope_const_structure_lock_guard&) = default;
+			xscope_const_structure_lock_guard(xscope_const_structure_lock_guard&&) = default;
+
+			xscope_const_structure_lock_guard(const mse::TXScopeFixedConstPointer<ivector>& owner_ptr)
+				: base_class(owner_ptr, mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+#if !defined(MSE_SCOPEPOINTER_DISABLED)
+			xscope_const_structure_lock_guard(const mse::TXScopeItemFixedConstPointer<ivector>& owner_ptr)
+				: base_class(owner_ptr, mse::us::unsafe_make_xscope_pointer_to(*((*owner_ptr).m_shptr))) {}
+#endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 		};
 
-		void not_async_shareable_tag() const {} /* Indication that this type is not eligible to be shared between threads. */
+
+		void async_not_shareable_and_not_passable_tag() const {}
 
 	private:
 		std::shared_ptr<_MV> m_shptr;
 	};
+
+#ifdef MSE_HAS_CXX17
+	/* deduction guides */
+	template<class _Iter, class _Alloc = std::allocator<typename std::iterator_traits<_Iter>::value_type> >
+	ivector(_Iter, _Iter, _Alloc = _Alloc())
+		->ivector<typename std::iterator_traits<_Iter>::value_type, _Alloc>;
+#endif /* MSE_HAS_CXX17 */
 
 	template<class _Ty, class _Alloc> inline bool operator!=(const ivector<_Ty, _Alloc>& _Left,
 		const ivector<_Ty, _Alloc>& _Right) {	// test for ivector inequality
@@ -619,30 +625,31 @@ namespace mse {
 			return (!(_Left < _Right));
 		}
 
-	/* For each (scope) vector instance, only one instance of xscope_structure_change_lock_guard may exist at any one
-	time. While an instance of xscope_structure_change_lock_guard exists it ensures that direct (scope) pointers to
+	/* For each (scope) vector instance, only one instance of xscope_structure_lock_guard may exist at any one
+	time. While an instance of xscope_structure_lock_guard exists it ensures that direct (scope) pointers to
 	individual elements in the vector do not become invalid by preventing any operation that might resize the vector
 	or increase its capacity. Any attempt to execute such an operation would result in an exception. */
 	template<class _Ty, class _A = std::allocator<_Ty> >
-	auto make_xscope_vector_size_change_lock_guard(const mse::TXScopeFixedPointer<ivector<_Ty, _A> >& owner_ptr) {
-		return typename ivector<_Ty, _A>::xscope_structure_change_lock_guard(owner_ptr);
+	auto make_xscope_structure_lock_guard(const mse::TXScopeFixedPointer<ivector<_Ty, _A> >& owner_ptr) {
+		return typename ivector<_Ty, _A>::xscope_structure_lock_guard(owner_ptr);
 	}
 #if !defined(MSE_SCOPEPOINTER_DISABLED)
 	template<class _Ty, class _A = std::allocator<_Ty> >
-	auto make_xscope_vector_size_change_lock_guard(const mse::TXScopeItemFixedPointer<ivector<_Ty, _A> >& owner_ptr) {
-		return typename ivector<_Ty, _A>::xscope_structure_change_lock_guard(owner_ptr);
+	auto make_xscope_structure_lock_guard(const mse::TXScopeItemFixedPointer<ivector<_Ty, _A> >& owner_ptr) {
+		return typename ivector<_Ty, _A>::xscope_structure_lock_guard(owner_ptr);
 	}
 #endif // !defined(MSE_SCOPEPOINTER_DISABLED)
 	template<class _Ty, class _A = std::allocator<_Ty> >
-	auto make_xscope_vector_size_change_lock_guard(const mse::TXScopeFixedConstPointer<ivector<_Ty, _A> >& owner_ptr) {
-		return ivector<_Ty, _A>::xscope_const_structure_change_lock_guard(owner_ptr);
+	auto make_xscope_structure_lock_guard(const mse::TXScopeFixedConstPointer<ivector<_Ty, _A> >& owner_ptr) {
+		return ivector<_Ty, _A>::xscope_const_structure_lock_guard(owner_ptr);
 	}
 #if !defined(MSE_SCOPEPOINTER_DISABLED)
 	template<class _Ty, class _A = std::allocator<_Ty> >
-	auto make_xscope_vector_size_change_lock_guard(const mse::TXScopeItemFixedConstPointer<ivector<_Ty, _A> >& owner_ptr) {
-		return ivector<_Ty, _A>::xscope_const_structure_change_lock_guard(owner_ptr);
+	auto make_xscope_structure_lock_guard(const mse::TXScopeItemFixedConstPointer<ivector<_Ty, _A> >& owner_ptr) {
+		return ivector<_Ty, _A>::xscope_const_structure_lock_guard(owner_ptr);
 	}
 #endif // !defined(MSE_SCOPEPOINTER_DISABLED)
+
 
 	template<class _Ty> using xscope_ivector_cipointer = typename ivector<_Ty>::xscope_cipointer;
 	template<class _Ty> using xscope_ivector_ipointer = typename ivector<_Ty>::xscope_ipointer;
@@ -718,5 +725,11 @@ namespace std {
 		return (_Right.swap(_Left));
 	}
 }
+
+#ifndef MSE_PUSH_MACRO_NOT_SUPPORTED
+#pragma pop_macro("MSE_THROW")
+#pragma pop_macro("_NOEXCEPT")
+#pragma pop_macro("_NOEXCEPT_OP")
+#endif // !MSE_PUSH_MACRO_NOT_SUPPORTED
 
 #endif /*ndef MSEIVECTOR_H*/

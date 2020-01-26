@@ -12,17 +12,10 @@
 
 #include "mseregistered.h"
 #include "mserefcounting.h"
-#include <memory>
-#include <iostream>
-#include <utility>
-
-/* for the test functions */
-#include <map>
-#include <string>
 
 #ifdef _MSC_VER
 #pragma warning( push )  
-#pragma warning( disable : 4100 4456 4189 )
+#pragma warning( disable : 4100 4456 4189 4996 )
 #endif /*_MSC_VER*/
 
 
@@ -36,17 +29,17 @@ namespace mse {
 #else /*MSE_REFCOUNTINGOFREGISTEREDPOINTER_DISABLED*/
 #endif /*MSE_REFCOUNTINGOFREGISTEREDPOINTER_DISABLED*/
 
-	template<typename _Ty> using TRefCountingOfRegisteredPointer = TRefCountingPointer<TWRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredNotNullPointer = TRefCountingNotNullPointer<TWRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredFixedPointer = TRefCountingFixedPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredPointer MSE_DEPRECATED = TRefCountingPointer<TNDRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredNotNullPointer MSE_DEPRECATED = TRefCountingNotNullPointer<TNDRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredFixedPointer MSE_DEPRECATED = TRefCountingFixedPointer<TNDRegisteredObj<_Ty>>;
 
-	template<typename _Ty> using TRefCountingOfRegisteredConstPointer = TRefCountingConstPointer<TWRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredNotNullConstPointer = TRefCountingNotNullConstPointer<TWRegisteredObj<_Ty>>;
-	template<typename _Ty> using TRefCountingOfRegisteredFixedConstPointer = TRefCountingFixedConstPointer<TWRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredConstPointer MSE_DEPRECATED = TRefCountingConstPointer<TNDRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredNotNullConstPointer MSE_DEPRECATED = TRefCountingNotNullConstPointer<TNDRegisteredObj<_Ty>>;
+	template<typename _Ty> using TRefCountingOfRegisteredFixedConstPointer MSE_DEPRECATED = TRefCountingFixedConstPointer<TNDRegisteredObj<_Ty>>;
 
 	template <class _Ty, class... Args>
-	TRefCountingOfRegisteredFixedPointer<_Ty> make_refcountingofregistered(Args&&... args) {
-		return make_refcounting<TWRegisteredObj<_Ty>>(std::forward<Args>(args)...);
+	MSE_DEPRECATED TRefCountingOfRegisteredFixedPointer<_Ty> make_refcountingofregistered(Args&&... args) {
+		return make_refcounting<TNDRegisteredObj<_Ty>>(std::forward<Args>(args)...);
 	}
 
 
@@ -54,12 +47,14 @@ namespace mse {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #else /*__clang__*/
 #ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif /*__GNUC__*/
 #endif /*__clang__*/
 
@@ -191,9 +186,9 @@ namespace mse {
 			public:
 				A() {}
 				A(const A& _X) : b(_X.b) {}
-				A(A&& _X) : b(std::forward<decltype(_X.b)>(_X.b)) {}
+				A(A&& _X) : b(std::forward<decltype(_X)>(_X).b) {}
 				virtual ~A() {}
-				A& operator=(A&& _X) { b = std::forward<decltype(_X.b)>(_X.b); return (*this); }
+				A& operator=(A&& _X) { b = std::forward<decltype(_X)>(_X).b; return (*this); }
 				A& operator=(const A& _X) { b = _X.b; return (*this); }
 
 				int b = 3;
@@ -221,10 +216,10 @@ namespace mse {
 				A_refcountingofregistered_ptr2 = nullptr;
 #ifndef MSE_REFCOUNTINGPOINTER_DISABLED
 				bool expected_exception = false;
-				try {
+				MSE_TRY {
 					int i = A_refcountingofregistered_ptr2->b; /* this is gonna throw an exception */
 				}
-				catch (...) {
+				MSE_CATCH_ANY {
 					//std::cerr << "expected exception" << std::endl;
 					expected_exception = true;
 					/* The exception is triggered by an attempt to dereference a null "refcountingofregistered pointer". */

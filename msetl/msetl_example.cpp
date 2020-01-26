@@ -11,7 +11,11 @@ types. Your best bet is probably to use a find/search to get to the data type yo
 
 #include "msetl_example_defs.h"
 
-//include "msetl.h"
+#include "msetl_example2.h"
+#include "msetl_example3.h"
+
+#ifndef EXCLUDE_MSETL_EXAMPLE
+
 #include "mseprimitives.h"
 #include "mseregistered.h"
 #include "msecregistered.h"
@@ -26,16 +30,7 @@ types. Your best bet is probably to use a find/search to get to the data type yo
 #include "msemstdvector.h"
 #include "mseivector.h"
 #include "msevector_test.h"
-#include "mselegacyhelpers.h"
 #include "msemstdstring.h"
-#include <algorithm>
-#include <iostream>
-#include <ctime>
-#include <ratio>
-#include <chrono>
-//include <thread>
-//include <sstream>
-#include <future>
 
 /* This block of includes is required for the mse::TRegisteredRefWrapper example */
 #include <algorithm>
@@ -45,8 +40,6 @@ types. Your best bet is probably to use a find/search to get to the data type yo
 #include <numeric>
 #include <random>
 #include <functional>
-
-#include "msetl_example2.h"
 
 
 #ifdef _MSC_VER
@@ -97,24 +90,73 @@ public:
 		return (*i1ptr) + (*i2ptr);
 	}
 
-	/* This function will be used to demonstrate using rsv::as_a_returnable_fparam() to enable template functions to return
-	one of their function parameters, potentially of the scope reference variety which would otherwise be rejected (with a
-	compile error) as an unsafe return value. */
-	template<class _TPointer1, class _TPointer2>
-	static auto longest(const _TPointer1& string1_xscpptr, const _TPointer2& string2_xscpptr) {
-		auto l_string1_xscpptr = mse::rsv::as_a_returnable_fparam(string1_xscpptr);
-		auto l_string2_xscpptr = mse::rsv::as_a_returnable_fparam(string2_xscpptr);
-		if (l_string1_xscpptr->length() > l_string2_xscpptr->length()) {
-			/* If string1_xscpptr were a regular TXScopeItemFixedPointer<mse::nii_string> and we tried to return it
-			directly instead of l_string1_xscpptr, it would have induced a compile error. */
-			return mse::return_value(l_string1_xscpptr);
+	/* This function will be used to demonstrate using rsv::as_a_returnable_fparam() to enable template functions to
+	return one of their function parameters, potentially of the scope reference variety which would otherwise be
+	rejected (with a compile error) as an unsafe return value. */
+	template<class _TString1Pointer, class _TString2Pointer>
+	static auto longest(const _TString1Pointer& string1_ptr, const _TString2Pointer& string2_ptr) {
+		auto l_string1_ptr = mse::rsv::as_a_returnable_fparam(string1_ptr);
+		auto l_string2_ptr = mse::rsv::as_a_returnable_fparam(string2_ptr);
+
+		if (l_string1_ptr->length() > l_string2_ptr->length()) {
+			/* If string1_ptr were a regular TXScopeItemFixedPointer<mse::mtnii_string> and we tried to return it
+			directly instead of l_string1_ptr, it would have induced a compile error. */
+
+			return mse::return_value(l_string1_ptr);
 		}
 		else {
-			/* mse::return_value() usually returns its input argument unmolested, but in this case it will return
-			a type different from the input type. This is to prevent any function that receives this return value
-			from, in turn, returning the value, as that might be unsafe. */
-			return mse::return_value(l_string2_xscpptr);
+			/* mse::return_value() usually just returns its input argument unmolested, but in this case, where the
+			argument was obtained from the mse::rsv::as_a_returnable_fparam() it will convert it back the type of
+			the original function parameter (thereby removing the "returnability" attribute that was added by
+			mse::rsv::as_a_returnable_fparam()). */
+
+			return mse::return_value(l_string2_ptr);
 		}
+	}
+	/* This function will be used to demonstrate nested function calls (safely) returning scope pointer/references. */
+	template<class _TString1Pointer, class _TString2Pointer>
+	static auto nested_longest(const _TString1Pointer& string1_ptr, const _TString2Pointer& string2_ptr) {
+		auto l_string1_ptr = mse::rsv::as_a_returnable_fparam(string1_ptr);
+		auto l_string2_ptr = mse::rsv::as_a_returnable_fparam(string2_ptr);
+
+		/* Note that with functions (potentially) returning a scope reference parameter (or an object derived
+		from a scope reference parameter), you generally want the function to be a template function with the
+		scope reference parameters types being (deduced) template parameters, as with this function, rather
+		than more explicitly specified scope reference types or template types. The reason for this is that in
+		the case of nested function calls, the number of nested function calls from which a scope reference
+		object can be (safely) returned is embedded in the scope reference object's type. That is, the exact
+		type of a returnable scope reference object depends on how many (levels of) nested function calls it
+		has been passed through. And you generally want your functions that return scope reference objects to
+		preserve the exact type of the scope reference passed, otherwise you may not be allowed (i.e. induced
+		compile error) to return the scope reference all the way back to the scope it originated from. */
+
+		return mse::return_value(longest(l_string1_ptr, l_string2_ptr));
+	}
+
+	struct CE {
+		mse::mtnii_string m_string1 = "abcde";
+	};
+
+	/* This function demonstrates scope reference objects inheriting the "returnability" trait from the reference objects
+	from which they were derived. */
+	template<class _TPointer1>
+	static auto xscope_string_const_section_to_member_of_CE(_TPointer1 CE_ptr) {
+		auto returnable_CE_ptr = mse::rsv::as_a_returnable_fparam(CE_ptr);
+
+		/* "Pointers to members" based on returnable pointers inherit the "returnability". */
+		auto returnable_cpointer_to_member = mse::make_xscope_const_pointer_to_member_v2(returnable_CE_ptr, &CE::m_string1);
+
+		/* "scope nrp string const sections" based on returnable pointers (or iterators) inherit the "returnability". */
+		auto returnable_string_const_section = mse::make_xscope_string_const_section(returnable_cpointer_to_member);
+		/* Subsections of returnable sections inherit the "returnability". */
+		auto returnable_string_const_section2 = mse::make_xscope_subsection(returnable_string_const_section, 1, 3);
+		return mse::return_value(returnable_string_const_section2);
+	}
+	template<class _TPointer1>
+	static auto nested_xscope_string_const_section_to_member_of_CE(_TPointer1 CE_ptr) {
+		auto returnable_CE_ptr = mse::rsv::as_a_returnable_fparam(CE_ptr);
+
+		return mse::return_value(xscope_string_const_section_to_member_of_CE(returnable_CE_ptr));
 	}
 
 	/* This function will be used to demonstrate using rsv::as_an_fparam() to enable template functions to accept scope 
@@ -126,13 +168,13 @@ public:
 		return (l_string1_xscpptr->length() > l_string2_xscpptr->length()) ? false : true;
 	}
 
-	mse::nii_string m_string1 = "initial text";
+	mse::mtnii_string m_string1 = "initial text";
 };
 /* User-defined classes need to be declared as (safely) shareable in order to be accepted by the access requesters. */
-typedef mse::us::TUserDeclaredAsyncShareableObj<H> ShareableH;
+typedef mse::rsv::TAsyncShareableAndPassableObj<H> ShareableH;
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
+
 	mse::msevector_test msevector_test;
 	msevector_test.run_all();
 
@@ -164,10 +206,10 @@ int main(int argc, char* argv[])
 		mse::mstd::vector<double> v4;
 #endif /*MSVC2010_COMPATIBLE*/
 #ifndef MSE_MSTDVECTOR_DISABLED
-		try {
+		MSE_TRY {
 			v4.insert(v4.begin(), v2.begin(), v3.begin());
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 			/* The exception is triggered by a comparision of incompatible "safe" iterators. */
 		}
@@ -175,6 +217,17 @@ int main(int argc, char* argv[])
 
 		/* And of course the iterators can be used with the standard algorithms, just like those of std::vector. */
 		std::sort(v3.begin(), v3.end());
+
+		{
+#ifdef MSE_HAS_CXX17
+#ifndef MSE_MSTDVECTOR_DISABLED
+			/* deduction guide example */
+			auto str1 = std::string("abcd");
+			auto vector2 = mse::mstd::vector(str1.cbegin(), str1.cend());
+			assert('b' == vector2[1]);
+#endif // !MSE_MSTDVECTOR_DISABLED
+#endif /* MSE_HAS_CXX17 */
+		}
 	}
 
 	{
@@ -191,7 +244,7 @@ int main(int argc, char* argv[])
 		vvi.clear();
 
 #if !defined(MSE_MSTDVECTOR_DISABLED) && !defined(MSE_MSTD_VECTOR_CHECK_USE_AFTER_FREE)
-		try {
+		MSE_TRY {
 			/* At this point, the vint_type object is cleared from vvi, but (with the current library implementation) it has
 			not actually been deallocated/destructed yet because it "knows" that there is an iterator, namely vi_it, that is
 			still referencing it. It will be deallocated when there are no more iterators referencing it. */
@@ -202,7 +255,7 @@ int main(int argc, char* argv[])
 			/* The vint_type object that vi_it was originally pointing to is now deallocated/destructed, because vi_it no longer
 			references it. */
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			/* At present, no exception will be thrown. With future library implementations, maybe. */
 			std::cerr << "potentially expected exception" << std::endl;
 		}
@@ -219,39 +272,41 @@ int main(int argc, char* argv[])
 		/* Here we're declaring an vector as a scope object. */
 		mse::TXScopeObj<mse::mstd::vector<int>> vector1_scpobj = mse::mstd::vector<int>{ 1, 2, 3 };
 
-		/* Here we're obtaining a scope iterator to the vector. */
-		auto scp_iter1 = mse::mstd::make_xscope_begin_iterator(&vector1_scpobj);
-		auto scp_iter2 = mse::mstd::make_xscope_end_iterator(&vector1_scpobj);
-
-		std::sort(scp_iter1, scp_iter2);
-
-		auto scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
-		scp_citer3 = scp_iter1;
-		scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
-		scp_citer3 += 2;
-		auto res1 = *scp_citer3;
-		auto res2 = scp_citer3[0];
-
-		/* Here we demonstrate the case where the vector is a member of a class/struct declared as a scope object. */
-		class CContainer1 {
-		public:
-			CContainer1() : m_vector({ 1, 2, 3 }) {}
-			mse::mstd::vector<int> m_vector;
-		};
-		mse::TXScopeObj<CContainer1> container1_scpobj;
-		auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
-		auto scp_citer4 = mse::mstd::make_xscope_begin_iterator(container1_m_vector_scpptr);
-		scp_citer4++;
-		auto res3 = *scp_citer4;
-
 		{
-			/* In order to obtain a direct scope pointer to a vector element, you first need to instantiate a "structure lock"
-			object, which "locks" the vector to ensure that no resize (or reserve) operation that might cause a scope pointer
-			to become invalid is performed. */
-			auto xscp_vector1_change_lock_guard = mse::mstd::make_xscope_vector_size_change_lock_guard(&vector1_scpobj);
-			auto scp_ptr1 = xscp_vector1_change_lock_guard.xscope_ptr_to_element(2);
+			/* Here we're obtaining a scope iterator to the vector. */
+			auto scp_iter1 = mse::mstd::make_xscope_begin_iterator(&vector1_scpobj);
+			auto scp_iter2 = mse::mstd::make_xscope_end_iterator(&vector1_scpobj);
+
+			std::sort(scp_iter1, scp_iter2);
+
+			auto scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
+			scp_citer3 = scp_iter1;
+			scp_citer3 = mse::mstd::make_xscope_begin_const_iterator(&vector1_scpobj);
+			scp_citer3 += 2;
+			auto res1 = *scp_citer3;
+			auto res2 = scp_citer3[0];
+
+			/* Here we demonstrate the case where the vector is a member of a class/struct declared as a scope object. */
+			class CContainer1 {
+			public:
+				CContainer1() : m_vector({ 1, 2, 3 }) {}
+				mse::mstd::vector<int> m_vector;
+			};
+			mse::TXScopeObj<CContainer1> container1_scpobj;
+			auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
+			auto scp_citer4 = mse::mstd::make_xscope_begin_iterator(container1_m_vector_scpptr);
+			scp_citer4++;
+			auto res3 = *scp_citer4;
+
+			/* Note that scope iterators, while they exist, have the effect of "structure locking" their associated container.
+			That is, while a scope iterator exists, the "structure" (i.e. size or capacity) of the target container will remain
+			unchanged. Attempting any operation that would affect the structure would result in an exception. This property
+			allows us to (safely) obtain a (direct) scope pointer to the scope iterator's target element. */
+			auto scp_ptr1 = mse::xscope_pointer(scp_iter1);
 			auto res4 = *scp_ptr1;
 		}
+		/* After all the scope pointers have gone out of scope, you may again perform operations that affect the container's
+		"structure" (i.e. size or capacity). */
 		vector1_scpobj.push_back(4);
 	}
 
@@ -330,39 +385,41 @@ int main(int argc, char* argv[])
 
 			mse::TXScopeObj<mse::us::msevector<int>> vector1_scpobj = mse::us::msevector<int>{ 1, 2, 3 };
 
-			auto scp_ss_iter1 = mse::make_xscope_begin_iterator(&vector1_scpobj);
-			auto scp_ss_iter2 = mse::make_xscope_end_iterator(&vector1_scpobj);
-
-			std::sort(scp_ss_iter1, scp_ss_iter2);
-
-			auto scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
-			scp_ss_citer3 = scp_ss_iter1;
-			scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
-			scp_ss_citer3 += 2;
-			auto res1 = *scp_ss_citer3;
-			auto res2 = scp_ss_citer3[0];
-
-			/* Here we demonstrate the case where the vector is a member of a class/struct declared as a
-			scope object. */
-			class CContainer1 {
-			public:
-				CContainer1() : m_vector({ 1, 2, 3 }) {}
-				mse::us::msevector<int> m_vector;
-			};
-			mse::TXScopeObj<CContainer1> container1_scpobj;
-			auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
-			auto scp_ss_citer4 = mse::make_xscope_begin_iterator(container1_m_vector_scpptr);
-			scp_ss_citer4++;
-			auto res3 = *scp_ss_citer4;
-
 			{
-				/* In order to obtain a direct scope pointer to a vector element, you first need to instantiate a "structure lock"
-				object, which "locks" the vector to ensure that no resize (or reserve) operation that might cause a scope pointer
-				to become invalid is performed. */
-				auto xscp_vector1_change_lock_guard = mse::make_xscope_vector_size_change_lock_guard(&vector1_scpobj);
-				auto scp_ptr1 = xscp_vector1_change_lock_guard.xscope_ptr_to_element(2);
+				auto scp_ss_iter1 = mse::make_xscope_begin_iterator(&vector1_scpobj);
+				auto scp_ss_iter2 = mse::make_xscope_end_iterator(&vector1_scpobj);
+
+				std::sort(scp_ss_iter1, scp_ss_iter2);
+
+				auto scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
+				scp_ss_citer3 = scp_ss_iter1;
+				scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&vector1_scpobj);
+				scp_ss_citer3 += 2;
+				auto res1 = *scp_ss_citer3;
+				auto res2 = scp_ss_citer3[0];
+
+				/* Here we demonstrate the case where the vector is a member of a class/struct declared as a
+				scope object. */
+				class CContainer1 {
+				public:
+					CContainer1() : m_vector({ 1, 2, 3 }) {}
+					mse::us::msevector<int> m_vector;
+				};
+				mse::TXScopeObj<CContainer1> container1_scpobj;
+				auto container1_m_vector_scpptr = mse::make_xscope_pointer_to_member_v2(&container1_scpobj, &CContainer1::m_vector);
+				auto scp_ss_citer4 = mse::make_xscope_begin_iterator(container1_m_vector_scpptr);
+				scp_ss_citer4++;
+				auto res3 = *scp_ss_citer4;
+
+				/* Note that scope iterators, while they exist, have the effect of "structure locking" their associated container.
+				That is, while a scope iterator exists, the "structure" (i.e. size or capacity) of the target container will remain
+				unchanged. Attempting any operation that would affect the structure would result in an exception. This property
+				allows us to (safely) obtain a (direct) scope pointer to the scope iterator's target element. */
+				auto scp_ptr1 = mse::xscope_pointer(scp_ss_iter1);
 				auto res4 = *scp_ptr1;
 			}
+			/* After all the scope pointers have gone out of scope, you may again perform operations that affect the container's
+			"structure" (i.e. size or capacity). */
 			vector1_scpobj.push_back(4);
 		}
 	}
@@ -381,13 +438,13 @@ int main(int argc, char* argv[])
 		mse::mstd::array<int, 3> a2 = { 11, 12, 13 };
 
 #ifndef MSE_MSTDARRAY_DISABLED
-		try {
+		MSE_TRY {
 			for (auto it1 = a1.begin(); it1 != a2.end(); it1++) {
 				/* It's not going to make it here. The invalid iterator comparison will throw an exception. */
 				std::cerr << "unexpected execution" << std::endl;
 			}
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 		}
 
@@ -398,12 +455,12 @@ int main(int argc, char* argv[])
 			it1 = a3.begin();
 			assert(5 == (*it1));
 		}
-		try {
+		MSE_TRY {
 			/* it1 "knows" that its target has been destroyed. It will throw an exception on any attempt to dereference it. */
 			int i = (*it1);
 			std::cerr << "unexpected execution" << std::endl;
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 		}
 #endif // !MSE_MSTDARRAY_DISABLED
@@ -448,11 +505,10 @@ int main(int argc, char* argv[])
 			auto res3 = *scp_iter4;
 
 			/* You can also obtain a corresponding scope pointer from a scope iterator. */
-			auto scp_ptr1 = mse::mstd::xscope_pointer_to_array_element<int, 3>(scp_iter4);
+			auto scp_ptr1 = mse::xscope_pointer(scp_iter4);
 			auto res4 = *scp_ptr1;
-			/* Or with a scope pointer to the array and an index. */
-			auto scp_cptr2 = mse::mstd::xscope_const_pointer_to_array_element<int, 3>(container1_m_array_scpptr, 2/*element index*/);
-			auto res5 = *scp_cptr2;
+			auto scp_cptr1 = mse::xscope_const_pointer(scp_iter4);
+			auto res5 = *scp_cptr1;
 		}
 
 		mse::mstd::array_test testobj1;
@@ -475,11 +531,11 @@ int main(int argc, char* argv[])
 		//bool bres1 = (a1.begin() == a2.end());
 		/* The previous commented out line would result in "undefined behavior. */
 
-		try {
+		MSE_TRY {
 			/* The behavior of the next line is not "undefined". It's going to throw an exception. */
 			bool bres2 = (a1.ss_begin() == a2.ss_end());
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 		}
 
@@ -508,7 +564,6 @@ int main(int argc, char* argv[])
 
 			auto scp_ss_citer3 = mse::make_xscope_begin_const_iterator(&array1_scpobj);
 			scp_ss_citer3 = scp_ss_iter1;
-			scp_ss_citer3 = array1_scpobj.ss_cbegin();
 			scp_ss_citer3 += 2;
 			auto res1 = *scp_ss_citer3;
 			auto res2 = scp_ss_citer3[0];
@@ -527,11 +582,10 @@ int main(int argc, char* argv[])
 			auto res3 = *scp_ss_citer4;
 
 			/* You can also obtain a corresponding scope pointer from a scope iterator. */
-			auto scp_ptr1 = mse::xscope_pointer_to_array_element<int, 3>(scp_ss_citer4);
+			auto scp_ptr1 = mse::xscope_pointer(scp_ss_citer4);
 			auto res4 = *scp_ptr1;
-			/* Or with a scope pointer to the array and an index. */
-			auto scp_ptr2 = mse::xscope_pointer_to_array_element<int, 3>(container1_m_array_scpptr, 2/*element index*/);
-			auto res5 = *scp_ptr2;
+			auto scp_cptr1 = mse::xscope_const_pointer(scp_ss_citer4);
+			auto res5 = *scp_cptr1;
 		}
 
 		mse::msearray_test testobj1;
@@ -550,7 +604,6 @@ int main(int argc, char* argv[])
 
 		mse::self_test::CPrimitivesTest1::s_test1();
 
-#ifndef MSE_PRIMITIVES_DISABLED
 		{
 			size_t number_of_security_credits = 0;
 			number_of_security_credits += 5;
@@ -567,7 +620,7 @@ int main(int argc, char* argv[])
 		}
 
 		{
-			mse::CSize_t number_of_security_credits = 0;
+			mse::CNDSize_t number_of_security_credits = 0;
 			number_of_security_credits += 5;
 			int minimum_number_of_security_credits_required_for_access = 7;
 			bool access_granted = false;
@@ -583,8 +636,8 @@ int main(int argc, char* argv[])
 		{
 			size_t number_of_security_credits = 0;
 			number_of_security_credits += 5;
-			mse::CInt minimum_number_of_security_credits_required_for_access = 7;
-			mse::CBool access_granted = false;
+			mse::CNDInt minimum_number_of_security_credits_required_for_access = 7;
+			mse::CNDBool access_granted = false;
 			if (number_of_security_credits - minimum_number_of_security_credits_required_for_access >= 0) {
 				access_granted = true;
 				assert(false);
@@ -593,33 +646,31 @@ int main(int argc, char* argv[])
 				access_granted = false; /* this works too */
 			}
 		}
-#endif // !MSE_PRIMITIVES_DISABLED
 
 		mse::CSize_t mse_szt1 = 0;
 		/* size_t szt2 = mse_szt1; */ /* This wouldn't compile. */
-#ifdef MSVC2010_COMPATIBLE
 		size_t szt1 = mse::as_a_size_t(mse_szt1); /* We exclude automatic conversion from mse::CSize_t to size_t because we
 													 consider size_t an intrinsically error prone type. */
-#else /*MSVC2010_COMPATIBLE*/
-		size_t szt1 = static_cast<size_t>(mse_szt1); /* We exclude automatic conversion from mse::CSize_t to size_t because we
+#ifndef MSVC2010_COMPATIBLE
+		size_t szt2 = static_cast<size_t>(mse_szt1); /* We exclude automatic conversion from mse::CSize_t to size_t because we
 													 consider size_t an intrinsically error prone type. */
-#endif /*MSVC2010_COMPATIBLE*/
+#endif // !MSVC2010_COMPATIBLE
 
-		try {
-			mse::CSize_t mse_szt2 = 0;
+		MSE_TRY {
+			mse::CNDSize_t mse_szt2 = 0;
 			mse_szt2 = -3;
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 			/* The exception is triggered by an "out of range" assignment to an mse::CSize_t. */
 		}
 
-		try {
+		MSE_TRY {
 			mse::CSize_t mse_szt3 = 3;
 			mse_szt3 -= 1; /* this is fine */
 			mse_szt3 -= 4; /* this is gonna throw an exception */
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 			/* The exception is triggered by an attempt to set an mse::CSize_t to an "out of range" value. */
 		}
@@ -662,6 +713,9 @@ int main(int argc, char* argv[])
 			/* mse::TRegisteredObj<A> is a class that is publicly derived from A, and so should be a compatible substitute for A
 			in almost all cases. */
 
+			/* You can also use the make_registered() function to obtain a registered object from a given value. */
+			auto registered_a2 = mse::make_registered(A());
+
 			assert(a.b == registered_a.b);
 			A_native_ptr = &a;
 			A_registered_ptr1 = &registered_a;
@@ -670,10 +724,10 @@ int main(int argc, char* argv[])
 			mse::TRegisteredPointer<A> A_registered_ptr2 = &registered_a;
 			A_registered_ptr2 = nullptr;
 #ifndef MSE_REGISTEREDPOINTER_DISABLED
-			try {
+			MSE_TRY {
 				int i = A_registered_ptr2->b; /* this is gonna throw an exception */
 			}
-			catch (...) {
+			MSE_CATCH_ANY {
 				std::cerr << "expected exception" << std::endl;
 				/* The exception is triggered by an attempt to dereference a null "registered pointer". */
 			}
@@ -703,11 +757,11 @@ int main(int argc, char* argv[])
 		}
 
 #ifndef MSE_REGISTEREDPOINTER_DISABLED
-		try {
+		MSE_TRY {
 			/* A_registered_ptr1 "knows" that the (registered) object it was pointing to has now been deallocated. */
 			int i = A_registered_ptr1->b; /* So this is gonna throw an exception */
 		}
-		catch (...) {
+		MSE_CATCH_ANY {
 			std::cerr << "expected exception" << std::endl;
 		}
 #endif // !MSE_REGISTEREDPOINTER_DISABLED
@@ -719,11 +773,11 @@ int main(int argc, char* argv[])
 			assert(3 == A_registered_ptr3->b);
 			mse::registered_delete<A>(A_registered_ptr3);
 #ifndef MSE_REGISTEREDPOINTER_DISABLED
-			try {
+			MSE_TRY {
 				/* A_registered_ptr3 "knows" that the (registered) object it was pointing to has now been deallocated. */
 				int i = A_registered_ptr3->b; /* So this is gonna throw an exception */
 			}
-			catch (...) {
+			MSE_CATCH_ANY {
 				std::cerr << "expected exception" << std::endl;
 			}
 #endif // !MSE_REGISTEREDPOINTER_DISABLED
@@ -856,6 +910,9 @@ int main(int argc, char* argv[])
 
 		mse::norad_delete<D>(d_ptr);
 
+		/* You can also use the make_norad() function to obtain a norad object from a given value. */
+		auto noradobj_c2 = mse::make_norad(C());
+
 		{
 			/* Polymorphic conversions. */
 			class FD : public mse::TNoradObj<D> {};
@@ -956,7 +1013,7 @@ int main(int argc, char* argv[])
 				A_refcounting_ptr = nullptr; /* Target object is destroyed here. */
 				return retval;
 			}
-			static std::string foo2(mse::TStrongFixedPointer<std::string, mse::TRefCountingFixedPointer<A>> strong_string_ptr, CRCFPVector& rcfpvector_ref) {
+			static std::string foo2(mse::us::TStrongFixedPointer<std::string, mse::TRefCountingFixedPointer<A>> strong_string_ptr, CRCFPVector& rcfpvector_ref) {
 				rcfpvector_ref.clear();
 				std::string retval = (*strong_string_ptr);
 				return retval;
@@ -993,7 +1050,7 @@ int main(int argc, char* argv[])
 			auto s_safe_const_ptr1 = mse::make_const_pointer_to_member_v2(rcfpvector.front(), &A::s);
 
 			/* The return type of mse::make_pointer_to_member_v2() depends on the type of the parameters passed
-			to it. In this case, the type of s_safe_ptr1 is mse::TStrongFixedPointer<std::string,
+			to it. In this case, the type of s_safe_ptr1 is mse::us::TStrongFixedPointer<std::string,
 			mse::TRefCountingFixedPointer<A>>. s_safe_ptr1 here is essentially a pointer to 
 			rcfpvector.front()->s with a copy of rcfpvector.front() welded to it to make sure that the
 			object is not deallocated while s_safe_ptr1 is still around. */
@@ -1027,7 +1084,7 @@ int main(int argc, char* argv[])
 		registered pointer directly at the object of interest, you'd target a/the strong owning pointer of the object. */
 
 		typedef mse::TRefCountingFixedPointer<std::string> str_rc_ptr_t; // owning pointer of a string
-		typedef mse::TWRegisteredObj<str_rc_ptr_t> str_rc_ptr_regobj_t; // registered version of above so that you can obtain a (weak)
+		typedef mse::TNDRegisteredObj<str_rc_ptr_t> str_rc_ptr_regobj_t; // registered version of above so that you can obtain a (weak)
 																	   // registered pointer to it
 
 		 /* str_rc_rc_ptr1 is a "shared" owner of an owning pointer of a string  */
@@ -1057,16 +1114,16 @@ int main(int argc, char* argv[])
 	}
 
 	{
-		/* Here we demonstrate using TWCRegisteredPointer<> as a safe "weak_ptr" to prevent cyclic references from becoming
+		/* Here we demonstrate using TNDRegisteredPointer<> as a safe "weak_ptr" to prevent cyclic references from becoming
 		memory leaks. This isn't much different from using std::weak_ptr<> in terms of functionality, but there can be
 		performance and safety advantages. */
 
 		class CRCNode;
 
 		typedef mse::TRefCountingFixedPointer<CRCNode> rcnode_strongptr_t;			// owning pointer of a CRCNode
-		typedef mse::TWRegisteredObj<rcnode_strongptr_t> rcnode_strongptr_regobj_t; // registered version of above so that you can obtain a (weak)
+		typedef mse::TNDRegisteredObj<rcnode_strongptr_t> rcnode_strongptr_regobj_t; // registered version of above so that you can obtain a (weak)
 																					// registered pointer to it
-		typedef mse::TWRegisteredPointer<rcnode_strongptr_t> rcnode_strongptr_weakptr_t; // (weak) registered pointer to owning pointer of a CRCNode
+		typedef mse::TNDRegisteredPointer<rcnode_strongptr_t> rcnode_strongptr_weakptr_t; // (weak) registered pointer to owning pointer of a CRCNode
 
 		class CRCNode {
 		public:
@@ -1085,31 +1142,40 @@ int main(int argc, char* argv[])
 				(*retval).m_root_ptr_ptr = &retval;
 				return retval;
 			}
-			auto MaybeStrongChildPtr() const { return m_maybe_child_ptr; }
-			rcnode_strongptr_regobj_t MakeChild() {
-				m_maybe_child_ptr.emplace(rcnode_strongptr_regobj_t{ mse::make_refcounting<CRCNode>(m_node_count_ptr, m_root_ptr_ptr) });
-				return m_maybe_child_ptr.value();
+			static auto MaybeStrongChildPtr(const rcnode_strongptr_regobj_t this_ptr) { return this_ptr->m_maybe_child_ptr; }
+			static rcnode_strongptr_regobj_t MakeChild(const rcnode_strongptr_regobj_t this_ptr) {
+				this_ptr->m_maybe_child_ptr.emplace(rcnode_strongptr_regobj_t{ mse::make_refcounting<CRCNode>(this_ptr->m_node_count_ptr, this_ptr->m_root_ptr_ptr) });
+				return this_ptr->m_maybe_child_ptr.value();
 			}
-			void DisposeOfChild() {
-				m_maybe_child_ptr.reset();
+			static void DisposeOfChild(const rcnode_strongptr_regobj_t this_ptr) {
+				this_ptr->m_maybe_child_ptr.reset();
 			}
 
 		private:
 			mse::TRegisteredPointer<mse::CInt> m_node_count_ptr;
-			mse::mstd::optional<rcnode_strongptr_regobj_t> m_maybe_child_ptr;
 			rcnode_strongptr_weakptr_t m_root_ptr_ptr;
+
+#if (1920 <= _MSC_VER) && defined(MSE_HAS_CXX17)
+/* msvc2019 seems to have introduced a bug in its "intellisense" feature where it sometimes has difficulty dealing
+with the library's (safe) optional<> types. */
+#define CRCNODE_STD_OPTIONAL std::optional
+#else // (1920 <= _MSC_VER) && defined(MSE_HAS_CXX17)
+#define CRCNODE_STD_OPTIONAL mse::mstd::optional
+#endif // (1920 <= _MSC_VER) && defined(MSE_HAS_CXX17)
+
+			CRCNODE_STD_OPTIONAL<rcnode_strongptr_regobj_t> m_maybe_child_ptr;
 		};
 
 		mse::TRegisteredObj<mse::CInt> node_counter = 0;
 		{
 			auto root_owner_ptr = CRCNode::MakeRoot(&node_counter);
-			auto kid1 = root_owner_ptr->MakeChild();
+			auto kid1 = root_owner_ptr->MakeChild(root_owner_ptr);
 			{
-				auto kid2 = kid1->MakeChild();
-				auto kid3 = kid2->MakeChild();
+				auto kid2 = kid1->MakeChild(kid1);
+				auto kid3 = kid2->MakeChild(kid2);
 			}
 			assert(4 == node_counter);
-			kid1->DisposeOfChild();
+			kid1->DisposeOfChild(kid1);
 			assert(2 == node_counter);
 		}
 		assert(0 == node_counter);
@@ -1122,10 +1188,10 @@ int main(int argc, char* argv[])
 
 		/* The "xscope" templates basically allow the programmer to indicate that the target object has "scope
 		lifetime". That is, the object is either allocated on the stack, or its "owner" pointer is allocated on
-		the stack. Scope pointers may only point to scope objects. While there are limitations on when they can
-		be used, scope pointers would be the preferred pointer type where performance is a priority as they don't
-		require any run time overhead to ensure that they will not be used to access a target object has already
-		been deallocated. */
+		the stack. Scope pointers may only point to scope objects (or certain other objects known to live beyond
+		the scope in question). While there are limitations on when they can be used, scope pointers would be the
+		preferred pointer type where performance is a priority as they don't require any run time overhead to 
+		ensure that they will not be used to access a target object has already been deallocated. */
 
 		class A {
 		public:
@@ -1153,9 +1219,15 @@ int main(int argc, char* argv[])
 		int res3 = B::foo3(&a_scpobj);
 		/* mse::TXScopeOwnerPointer<> will allocate a scope object on the heap (and deallocate it at the
 		end of the scope). */
+		/* You can either pass the object's constructor arguments to mse::TXScopeOwnerPointer<>'s constructor, */
 		mse::TXScopeOwnerPointer<A> xscp_a_ownerptr(7);
+		/* or you can use mse::make_xscope_owner<>() in a manner akin to std::make_unique<>() */
+		auto xscp_a_ownerptr2 = mse::make_xscope_owner<A>(7);
 		int res4 = B::foo2(xscp_a_ownerptr);
 		int res4b = B::foo2(&(*xscp_a_ownerptr));
+
+		/* You can also use the make_xscope() function to obtain a scope object from a given value. */
+		auto a2_scpobj = mse::make_xscope(A(7));
 
 		/* You can use the "mse::make_xscope_pointer_to_member_v2()" function to obtain a safe pointer to a member of
 		an xscope object. */
@@ -1178,89 +1250,56 @@ int main(int argc, char* argv[])
 		mse::TXScopeItemFixedConstPointer<A> xscp_cptr2 = xscp_cptr1;
 		A res7 = *xscp_cptr2;
 
-		/* Technically, you're not allowed to return a non-owning scope pointer (or any object containing a scope reference)
-		from a function. (The return_value() function wrapper enforces this.) Pretty much the only time you'd legitimately
-		want to do this is when the returned pointer is one of the input parameters. An example might be a "min(a, b)"
-		function which takes two objects by reference and returns the reference to the lesser of the two objects. The
-		library provides the xscope_chosen() function which takes a bool and two objects of the same type (in this case it
-		will be two scope pointers) and returns one of the objects (scope pointers), which one depending on the value of the
-		bool. You could use this function to implement the equivalent of a min(a, b) function like so: */
+		/* For safety reasons, non-owning scope pointers (or any objects containing a scope reference) are not permitted
+		to be used as function return values. (The return_value() function wrapper enforces this.) Pretty much the only
+		time you'd legitimately want to do this is when the returned pointer is one of the input parameters. An example
+		might be a "min(a, b)" function which takes two objects by reference and returns the reference to the lesser of
+		the two objects. For these cases you could use the xscope_chosen() function which takes two objects of the same
+		type (in this case it will be two scope pointers) and returns one of the objects (scope pointers), which one
+		depending on the value of a given "decider" function. You could use this function to implement the equivalent of
+		a min(a, b) function like so: */
 		auto xscp_a_ptr5 = &a_scpobj;
 		auto xscp_a_ptr6 = &(*xscp_a_ownerptr);
-		auto xscp_min_ptr1 = mse::xscope_chosen((*xscp_a_ptr6 < *xscp_a_ptr5), xscp_a_ptr5, xscp_a_ptr6);
+		const auto second_arg_is_smaller_fn = [](const auto xscp_a_ptr1, const auto xscp_a_ptr2) { return (*xscp_a_ptr2) < (*xscp_a_ptr1); };
+		auto xscp_min_ptr1 = mse::xscope_chosen(second_arg_is_smaller_fn, xscp_a_ptr5, xscp_a_ptr6);
 		assert(5 == xscp_min_ptr1->b);
 
 		{
-			/**************************************/
-			/*  rsv::TReturnableFParam<>          */
-			/*  && rsv::as_a_returnable_fparam()  */
-			/**************************************/
+			/***********************************/
+			/*  rsv::as_a_returnable_fparam()  */
+			/***********************************/
 
-			/* Another alternative if you want to return a scope pointer (or any object containing a scope
-			reference) input parameter from a function is to wrap the parameter type with the
-			rsv::TXScopeReturnableFParam<> transparent template wrapper when declaring the parameter. 
+			/* Another alternative if you want to return a scope pointer (or any object containing a scope reference)
+			function parameter is to (immediately) create a "returnable" version of it using the
+			rsv::as_a_returnable_fparam() function.
 			
 			Normally the return_value() function wrapper will reject (with a compile error) scope pointers as unsafe return
-			values. But if the scope pointer type is wrapped in the rsv::TXScopeReturnableFParam<> transparent template
-			wrapper, then it will be accepted as a safe return value. Because it's generally safe to return a reference to
-			an object if that reference was passed as an input parameter. Well, as long as the object is not a temporary
-			one. So unlike with rsv::TXScopeFParam<>, scope reference types wrapped with rsv::TXScopeReturnableFParam<> will
-			not enable support for references to temporaries, as returning a (scope) reference to a temporary would be
-			unsafe even if the reference was passed as a function parameter. So for scope reference parameters you have to
-			choose between being able to use it as a return value, or supporting references to temporaries. (Or neither.)
-			
-			In the case of function templates, sometimes you want the parameter types to be auto-deduced, and use of the
-			mse::rsv::TXScopeReturnableFParam<> wrapper can interfere with that. In those cases you can instead convert
-			parameters to their wrapped type after the fact using the rsv::xscope_as_a_returnable_fparam() function.
-			Note that using this function (or the rsv::TXScopeReturnableFParam<> wrapper) on anything other than function
-			parameters is unsafe, and currently there is no compile-time enforcement of this restriction.
+			values. But the rsv::as_a_returnable_fparam() function can be used to (immediately) obtain a "returnable"
+			version of a scope pointer function parameter. Because it's generally safe to return a reference to an object if
+			that reference was passed as a parameter. Well, as long as the object is not a temporary object. So unlike
+			rsv::as_an_fparam(), rsv::as_a_returnable_fparam() will not accept scope pointers to temporaries, as returning a
+			(scope) reference to a temporary would be unsafe even if the reference was passed as a function parameter. So
+			for scope reference parameters you have to choose between being able to use it as a return value, or supporting
+			references to temporaries. (Or neither.)
 
-			rsv::TReturnableFParam<> and rsv::as_a_returnable_fparam() can be used for situations when the type of the
-			input parameter is itself a template parameter and not necessarily always a scope type or treated as a scope
-			type. */
+			Note that using this function on anything other than function parameters is unsafe, and currently there is no
+			compile-time enforcement of this restriction. */
 
-			class CD {
-			public:
-				static auto longest(mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedPointer<mse::nii_string> > string1_xscpptr
-					, mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedPointer<mse::nii_string> > string2_xscpptr) {
-					if (string1_xscpptr->length() > string2_xscpptr->length()) {
-						/* If string1_xscpptr were a regular TXScopeItemFixedPointer<mse::nii_string> the next line would have
-						induced a compile error. */
-						return mse::return_value(string1_xscpptr);
-					}
-					else {
-						/* mse::return_value() usually returns its input argument unmolested, but in this case it will return
-						a type (slightly) different from the input type. This is to prevent any function that receives this
-						return value from, in turn, returning the value, as that might be unsafe. */
-						return mse::return_value(string2_xscpptr);
-					}
-				}
-			};
-			mse::TXScopeObj<mse::nii_string> xscope_string1 = "abc";
-			mse::TXScopeObj<mse::nii_string> xscope_string2 = "abcd";
-			auto longer_string_xscpptr = CD::longest(&xscope_string1, &xscope_string2);
-			auto copy_of_longer_string = *longer_string_xscpptr;
+			mse::TXScopeObj<mse::mtnii_string> xscope_string1 = "abc";
+			mse::TXScopeObj<mse::mtnii_string> xscope_string2 = "abcd";
 
-			auto longer_string2_xscpptr = H::longest(&xscope_string1, &xscope_string2);
+			auto longer_string_xscpptr = H::longest(&xscope_string1, &xscope_string2);
+			auto length1 = (*longer_string_xscpptr).length();
 
-			class CE {
-			public:
-				static auto xscope_string_const_section_to_member(mse::rsv::TXScopeReturnableFParam<mse::TXScopeItemFixedConstPointer<CE> > returnable_this_cpointer) {
-					/* "Pointers to members" based on returnable pointers inherit the "returnability". */
-					auto returnable_cpointer_to_member = mse::make_xscope_const_pointer_to_member_v2(returnable_this_cpointer, &CE::m_string1);
-					/* "scope nrp string const sections" based on returnable pointers (or iterators) inherit the "returnability". */
-					auto returnable_string_const_section = mse::make_xscope_nrp_string_const_section(returnable_cpointer_to_member);
-					/* Subsections of returnable sections inherit the "returnability". */
-					auto returnable_string_const_section2 = returnable_string_const_section.xscope_subsection(1, 3);
-					return mse::return_value(returnable_string_const_section2);
-				}
-			private:
-				mse::nii_string m_string1 = "abcde";
-			};
+			auto longer_string_xscpptr2 = H::nested_longest(&xscope_string1, &xscope_string2);
+			auto length2 = (*longer_string_xscpptr2).length();
 
-			mse::TXScopeObj<CE> e_xscpobj;
-			auto xscope_string_const_section1 = mse::TXScopeObj<CE>::xscope_string_const_section_to_member(&e_xscpobj);
+			mse::TXScopeObj<H::CE> e_xscpobj;
+			auto xscope_string_const_section1 = H::xscope_string_const_section_to_member_of_CE(&e_xscpobj);
 			assert(xscope_string_const_section1 == "bcd");
+
+			auto xscope_string_const_section2 = H::nested_xscope_string_const_section_to_member_of_CE(&e_xscpobj);
+			assert(xscope_string_const_section2 == "bcd");
 		}
 
 		{
@@ -1290,31 +1329,31 @@ int main(int argc, char* argv[])
 
 			class CD {
 			public:
-				static bool second_is_longer(mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer(mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::mtnii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopeItemFixedConstPointer<mse::mtnii_string> > string2_xscpptr) {
 
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 
-				static bool second_is_longer_any(mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer_any(mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::mtnii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopeAnyConstPointer<mse::mtnii_string> > string2_xscpptr) {
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 
-				static bool second_is_longer_poly(mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string1_xscpptr
-					, mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::nii_string> > string2_xscpptr) {
+				static bool second_is_longer_poly(mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::mtnii_string> > string1_xscpptr
+					, mse::rsv::TXScopeFParam<mse::TXScopePolyConstPointer<mse::mtnii_string> > string2_xscpptr) {
 					return (string1_xscpptr->length() > string2_xscpptr->length()) ? false : true;
 				}
 			};
 
-			mse::TXScopeObj<mse::nii_string> xscope_string1 = "abc";
+			mse::TXScopeObj<mse::mtnii_string> xscope_string1 = "abc";
 			/* Here we're using the pointer_to() function to obtain a ("caged") pointer to the temporary scope object. The '&'
 			(ampersand) operator would also work, but would not correspond to valid native C++, as C++ does not support taking
 			the address of an r-value. */
-			auto res1 = CD::second_is_longer(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::nii_string>(xscope_string1 + "de")));
-			auto res2 = H::second_is_longer(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::nii_string>(xscope_string1 + "de")));
-			auto res3 = CD::second_is_longer_any(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::nii_string>(xscope_string1 + "de")));
-			auto res4 = CD::second_is_longer_poly(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::nii_string>(xscope_string1 + "de")));
+			auto res1 = CD::second_is_longer(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::mtnii_string>(xscope_string1 + "de")));
+			auto res2 = H::second_is_longer(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::mtnii_string>(xscope_string1 + "de")));
+			auto res3 = CD::second_is_longer_any(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::mtnii_string>(xscope_string1 + "de")));
+			auto res4 = CD::second_is_longer_poly(&xscope_string1, mse::pointer_to(mse::TXScopeObj<mse::mtnii_string>(xscope_string1 + "de")));
 		}
 
 		{
@@ -1323,13 +1362,13 @@ int main(int argc, char* argv[])
 			/***********************/
 
 			/* Scope pointers cannot (currently) be retargeted after construction. If you need a pointer that will point to
-			multiple different scope objects over its lifespan, you can use a registered pointer. This means that the target
-			objects will also need to be registered objects. If the object is a registered scope object, then the '&'
-			operator will will return a registered pointer. But at some point we're going to need a scope pointer to the
-			base scope object. A convenient way to get one is to use the xscope_ifptr_to() function. */
+			multiple different scope objects over its lifespan, you can use a registered pointer. You could make the target
+			object a registered object in addition to being a scope object. If the object is a registered scope object, then
+			the '&' operator will will return a registered pointer. But at some point we're going to need a scope pointer to
+			the base scope object. A convenient way to get one is to use the xscope_ifptr_to() function. */
 
-			typedef mse::TXScopeObj<mse::nii_string> xscp_nstring_t;
-			typedef mse::TXScopeItemFixedPointer<mse::nii_string> xscp_nstring_ptr_t;
+			typedef mse::TXScopeObj<mse::mtnii_string> xscp_nstring_t;
+			typedef mse::TXScopeItemFixedPointer<mse::mtnii_string> xscp_nstring_ptr_t;
 			class CB {
 			public:
 				static void foo1(xscp_nstring_ptr_t xscope_ptr1) {
@@ -1355,6 +1394,65 @@ int main(int argc, char* argv[])
 			}
 			/* Attempting to dereference registered_ptr1 here would result in an exception. */
 			//*registered_ptr1;
+		}
+
+		{
+			/* The drawback with the above technique of declaring a scope object to additionally be a registered object
+			in order to support retargetable pointers is that the decision (of whether to support retargetable pointers)
+			needs to be made when and where the object is declared rather than when and where the retargetable pointers
+			are needed. A more flexible alternative is to add an extra level of indirection. That is, use registered
+			(or norad) pointers that target scope pointers that, in turn, target the scope object rather than registered
+			pointers that target the scope object directly. This way the scope object does not need to be additionally
+			declared as a registered object. The scope pointers would need to be declared as registered objects, but you
+			can declare such scope pointers when and where you need them.
+			*/
+
+			typedef mse::TXScopeObj<mse::mtnii_string> xscp_nstring_t;
+			typedef mse::TXScopeItemFixedPointer<mse::mtnii_string> xscp_nstring_ptr_t;
+			class CB {
+			public:
+				static void foo1(xscp_nstring_ptr_t xscope_ptr1) {
+					std::cout << *xscope_ptr1;
+				}
+			};
+			xscp_nstring_t scp_nstring1("some text");
+
+			CB::foo1(&scp_nstring1);
+
+			{
+				typedef mse::TRegisteredObj< xscp_nstring_ptr_t > reg_xscp_nstring_ptr_t;
+				typedef mse::TRegisteredPointer<xscp_nstring_ptr_t> reg_xscp_nstring_ptr_ptr_t;
+
+				reg_xscp_nstring_ptr_t reg_xscp_nstring_ptr1 = &scp_nstring1;
+
+				reg_xscp_nstring_ptr_ptr_t reg_xscp_nstring_ptr_ptr1 = &reg_xscp_nstring_ptr1;
+
+				CB::foo1(*reg_xscp_nstring_ptr_ptr1);
+
+				xscp_nstring_t scp_nstring2("some other text");
+
+				reg_xscp_nstring_ptr_t reg_xscp_nstring_ptr2 = &scp_nstring2;
+
+				reg_xscp_nstring_ptr_ptr1 = &reg_xscp_nstring_ptr2;
+
+				CB::foo1(*reg_xscp_nstring_ptr_ptr1);
+
+				{
+					xscp_nstring_t scp_nstring3("other text");
+
+					{
+						reg_xscp_nstring_ptr_t reg_xscp_nstring_ptr3 = &scp_nstring3;
+
+						{
+							reg_xscp_nstring_ptr_ptr1 = &reg_xscp_nstring_ptr3;
+						}
+
+						CB::foo1(*reg_xscp_nstring_ptr_ptr1);
+					}
+					/* Attempting to dereference reg_xscp_nstring_ptr_ptr1 here would result in an exception. */
+					//*reg_xscp_nstring_ptr_ptr1;
+				}
+			}
 		}
 
 		mse::self_test::CXScpPtrTest1::s_test1();
@@ -1421,7 +1519,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	{
+	MSE_SUPPRESS_CHECK_IN_XSCOPE {
 		/*************************/
 		/*   Simple Benchmarks   */
 		/*************************/
@@ -1829,7 +1927,11 @@ int main(int argc, char* argv[])
 				CF* cf_ptr = item1.m_next_item_ptr;
 				for (int i = 0; i < number_of_loops2; i += 1) {
 					cf_ptr = cf_ptr->m_next_item_ptr;
-					if (!cf_ptr) { MSE_THROW(""); }
+					if (!cf_ptr) {
+#if __cpp_exceptions >= 199711
+						throw("");
+#endif // __cpp_exceptions >= 199711
+					}
 				}
 				auto t2 = std::chrono::high_resolution_clock::now();
 				auto time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
@@ -2005,6 +2107,7 @@ int main(int argc, char* argv[])
 	}
 
 	msetl_example2();
+	msetl_example3();
 
 	return 0;
 }
@@ -2022,3 +2125,10 @@ int main(int argc, char* argv[])
 #pragma warning( pop )  
 #endif /*_MSC_VER*/
 
+#else // !EXCLUDE_MSETL_EXAMPLE
+int main(int /*argc*/, char* /*argv*/[]) {
+	msetl_example2();
+	msetl_example3();
+	return 0;
+}
+#endif // !EXCLUDE_MSETL_EXAMPLE
