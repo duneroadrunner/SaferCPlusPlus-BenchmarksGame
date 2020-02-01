@@ -49,12 +49,14 @@ template <bool modei> int Index(mse::msear_size_t i, mse::msear_size_t j) {
 
 template <bool modei, class TSrcArrayConstSection, class TDstArraySection>
 void EvalPart_V2(TSrcArrayConstSection src_section, TDstArraySection dst_section, mse::msear_size_t dst_section_absolute_start_index) {
+	auto xs_dst_section = mse::make_xscope(dst_section);
+
 	mse::msear_size_t index = 0U;
-	/* Even though we're only writing to the "dst_section" span, the "i" variable needs to be relative to the start
+	/* Even though we're only writing to the "xs_dst_section" span, the "i" variable needs to be relative to the start
 	of the whole array, not the span. */
 	mse::msear_size_t i = dst_section_absolute_start_index;
 
-	for (; index + 1U < dst_section.size(); index += 2U, i += 2U) {
+	for (; index + 1U < xs_dst_section.size(); index += 2U, i += 2U) {
 		__m128d sum = _mm_set_pd(
 			src_section[0] / double(Index<modei>(i + 1, 0)),
 			src_section[0] / double(Index<modei>(i + 0, 0)));
@@ -74,7 +76,22 @@ void EvalPart_V2(TSrcArrayConstSection src_section, TDstArraySection dst_section
 			sum = _mm_add_pd(sum, _mm_div_pd(_mm_set1_pd(src_section[j]), idx));
 		}
 
-		MSE_SUPPRESS_CHECK_IN_XSCOPE _mm_storeu_pd(&(dst_section[index + 0]), sum);
+		/* The (legacy) simd function we're using takes a raw pointer parameter. Safely obtaining a raw pointer to an
+		array element requires first obtaing a safe (scope) iterator to the element like so: */
+		auto xs_iter1 = mse::make_xscope_begin_iterator(&xs_dst_section);
+		xs_iter1 += (index + 0);
+
+		/* From the safe (scope) iterator we can obtain a safe scope pointer to its target. */
+		auto xs_ptr1 = mse::xscope_pointer(xs_iter1);
+
+		/* A static checking tool like scpptool can verify that obtaining a raw pointer to a direct dereference of a
+		scope pointer is safe. */
+		auto ptr = std::addressof(*xs_ptr1);
+
+		/* Which we can then pass to the (legacy) simd function. */
+		_mm_storeu_pd(ptr, sum);
+
+		//_mm_storeu_pd(&(xs_dst_section[index + 0]), sum);
 	}
 	for (; index < dst_section.size(); ++index, ++i) {
 		double sum = 0;
@@ -105,7 +122,7 @@ void EvalATimesU_V2_ar(TSrcAccessRequester src_ar, mse::msear_size_t src_size, T
 	/* So xscope_src_csection is just a slightly faster version of the array section interface that src_ar.readlock_ptr()
 	gives us. */
 
-	EvalPart_V2<1>(xscope_src_csection, dst_ar.writelock_ra_section(), dst_absolute_start_index);
+	EvalPart_V2<1>(xscope_src_csection, dst_ar.xscope_writelock_ra_section(), dst_absolute_start_index);
 }
 template<class TSrcAccessRequester, class TDstAccessRequester>
 void EvalAtTimesU_V2_ar(TSrcAccessRequester src_ar, mse::msear_size_t src_size, TDstAccessRequester dst_ar, mse::msear_size_t dst_absolute_start_index) {
@@ -114,7 +131,7 @@ void EvalAtTimesU_V2_ar(TSrcAccessRequester src_ar, mse::msear_size_t src_size, 
 	auto src_begin_xscpciter = mse::make_xscope_const_iterator(src_xscpcptr);
 	auto xscope_src_csection = mse::make_xscope_random_access_const_section(src_begin_xscpciter, src_size);
 
-	EvalPart_V2<0>(xscope_src_csection, dst_ar.writelock_ra_section(), dst_absolute_start_index);
+	EvalPart_V2<0>(xscope_src_csection, dst_ar.xscope_writelock_ra_section(), dst_absolute_start_index);
 }
 
 template<class TBufferAccessRequester, class TSectionSizeList>

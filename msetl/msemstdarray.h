@@ -127,70 +127,6 @@ namespace mse {
 		return mse::us::unsafe_make_xscope_const_pointer_to(*iter_cref);
 	}
 
-	template<class _Ty, size_t _Size>
-	auto xscope_pointer(const mse::TXScopeItemFixedConstPointer<typename std::array<_Ty, _Size>::iterator>& iter_xscptr) {
-		return mse::us::unsafe_make_xscope_pointer_to(*(*iter_xscptr));
-	}
-	template<class _Ty, size_t _Size>
-	auto xscope_pointer(const mse::TXScopeItemFixedConstPointer<typename std::array<_Ty, _Size>::const_iterator>& iter_xscptr) {
-		return mse::us::unsafe_make_xscope_const_pointer_to(*(*iter_xscptr));
-	}
-	template<class _Ty, size_t _Size>
-	auto xscope_const_pointer(const mse::TXScopeItemFixedConstPointer<typename std::array<_Ty, _Size>::iterator>& iter_xscptr) {
-		return mse::us::unsafe_make_xscope_const_pointer_to(*(iter_xscptr));
-	}
-	template<class _Ty, size_t _Size>
-	auto xscope_const_pointer(const mse::TXScopeItemFixedConstPointer<typename std::array<_Ty, _Size>::const_iterator>& iter_xscptr) {
-		return mse::us::unsafe_make_xscope_const_pointer_to(*(*iter_xscptr));
-	}
-
-	namespace impl {
-		namespace ns_xscope_pointer {
-
-			template<class _Ty>
-			auto xscope_const_pointer_helper2(std::true_type, const _Ty& ptr_to_iter) {
-				return mse::us::unsafe_make_xscope_const_pointer_to(*(*ptr_to_iter));
-			}
-			template<class TPointerIter>
-			auto xscope_const_pointer_helper2(std::false_type, const TPointerIter& ptr_iter) {
-				return mse::us::unsafe_make_xscope_const_pointer_to(*ptr_iter);
-			}
-			template<class TIter>
-			auto xscope_const_pointer_helper1(std::true_type, const TIter& iter) {
-				return mse::us::unsafe_make_xscope_const_pointer_to(*iter);
-			}
-			template<class TPointer>
-			auto xscope_const_pointer_helper1(std::false_type, const TPointer& ptr) {
-				return xscope_const_pointer_helper2(typename mse::impl::is_non_pointer_iterator<decltype(*ptr)>::type(), ptr);
-			}
-
-			template<class _Ty>
-			auto xscope_pointer_helper2(std::true_type, const _Ty& ptr_to_iter) {
-				return mse::us::unsafe_make_xscope_pointer_to(*(*ptr_to_iter));
-			}
-			template<class TPointerIter>
-			auto xscope_pointer_helper2(std::false_type, const TPointerIter& ptr_iter) {
-				return mse::us::unsafe_make_xscope_pointer_to(*ptr_iter);
-			}
-			template<class TIter>
-			auto xscope_pointer_helper1(std::true_type, const TIter& iter) {
-				return mse::us::unsafe_make_xscope_pointer_to(*iter);
-			}
-			template<class TPointer>
-			auto xscope_pointer_helper1(std::false_type, const TPointer& ptr) {
-				return xscope_pointer_helper2(typename mse::impl::is_non_pointer_iterator<decltype(*ptr)>::type(), ptr);
-			}
-		}
-	}
-	template<class _Ty>
-	auto xscope_const_pointer(const _Ty& param) {
-		return impl::ns_xscope_pointer::xscope_const_pointer_helper1(typename mse::impl::is_non_pointer_iterator<_Ty>::type(), param);
-	}
-	template<class _Ty>
-	auto xscope_pointer(const _Ty& param) {
-		return impl::ns_xscope_pointer::xscope_pointer_helper1(typename mse::impl::is_non_pointer_iterator<_Ty>::type(), param);
-	}
-
 	namespace mstd {
 
 #else /*MSE_MSTDARRAY_DISABLED*/
@@ -806,7 +742,9 @@ namespace mse {
 		}
 		template<class _TArrayPointer>
 		auto make_xscope_end_iterator(const _TArrayPointer& owner_ptr) {
-			return mse::mstd::make_xscope_begin_iterator(owner_ptr) + (*owner_ptr).size();
+			auto retval = mse::mstd::make_xscope_begin_iterator(owner_ptr);
+			retval += (*owner_ptr).size();
+			return retval;
 		}
 		/* Overloads for rsv::TReturnableFParam<>. */
 		MSE_OVERLOAD_FOR_RETURNABLE_FPARAM_DECLARATION(make_xscope_begin_const_iterator)
